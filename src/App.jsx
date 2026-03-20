@@ -540,6 +540,169 @@ function PoolLobby({ poolId, player, onPlay, onLeaderboard, onAdmin }) {
   );
 }
 
+function EliminatedView({ poolId, player, picks, r32Matchups, onBack }) {
+  const [results, setResults] = useState([]);
+  const [leaderboard, setLeaderboard] = useState(null);
+  const [showLeaderboard, setShowLeaderboard] = useState(false);
+
+  useEffect(() => {
+    api(`/pools/${poolId}/results`).then(setResults);
+    api(`/pools/${poolId}/leaderboard`).then(setLeaderboard);
+  }, [poolId]);
+
+  // Build results map
+  const resultMap = {};
+  for (const r of results) {
+    resultMap[`${r.region}-${r.matchup_idx}`] = r.winner;
+  }
+
+  // Build pick results with W/L
+  const pickResults = Object.entries(picks)
+    .filter(([, v]) => v)
+    .map(([key, team]) => {
+      const [region, mIdxStr] = key.split("-");
+      const mIdx = parseInt(mIdxStr);
+      const winner = resultMap[`${region}-${mIdx}`];
+      const matchup = r32Matchups[region]?.[mIdx];
+      const opponent = matchup
+        ? (matchup.teamA.name === team ? matchup.teamB.name : matchup.teamA.name)
+        : "Unknown";
+      const won = winner === team;
+      const pending = !winner;
+      return { region, team, opponent, winner, won, pending };
+    });
+
+  const aliveCount = leaderboard ? leaderboard.filter((p) => p.alive).length : "...";
+  const totalCount = leaderboard ? leaderboard.length : "...";
+
+  if (showLeaderboard && leaderboard) {
+    return (
+      <div style={s.page}>
+        <button onClick={() => setShowLeaderboard(false)} style={s.backBtn}>&#8592; Back to Results</button>
+        <div style={{ maxWidth: 600, margin: "0 auto" }}>
+          <h2 style={{ color: "#fff", fontSize: 28, margin: "0 0 8px 0" }}>Leaderboard</h2>
+          <p style={{ color: "#64748b", fontSize: 14, margin: "0 0 24px 0" }}>
+            {aliveCount} of {totalCount} players still alive
+          </p>
+          <div style={{ ...s.card, overflow: "hidden", padding: 0 }}>
+            <div style={{
+              display: "grid", gridTemplateColumns: "40px 1fr 100px",
+              padding: "12px 16px", fontSize: 11, color: "#64748b",
+              textTransform: "uppercase", letterSpacing: 1, borderBottom: "1px solid rgba(255,255,255,0.05)",
+            }}>
+              <div>#</div><div>Player</div><div style={{ textAlign: "center" }}>Status</div>
+            </div>
+            {leaderboard.map((p, i) => (
+              <div key={p.id} style={{
+                display: "grid", gridTemplateColumns: "40px 1fr 100px",
+                padding: "14px 16px", borderBottom: "1px solid rgba(255,255,255,0.03)",
+                opacity: p.alive ? 1 : 0.5,
+                backgroundColor: p.name === player.name ? "rgba(249,115,22,0.05)" : "transparent",
+              }}>
+                <div style={{ color: "#64748b", fontWeight: 600 }}>{i + 1}</div>
+                <div style={{ color: "#fff", fontWeight: 600 }}>
+                  {p.name}{p.name === player.name ? " (you)" : ""}
+                </div>
+                <div style={{ textAlign: "center" }}>
+                  <span style={{
+                    padding: "4px 10px", borderRadius: 20, fontSize: 11, fontWeight: 700,
+                    backgroundColor: p.alive ? "rgba(34,197,94,0.15)" : "rgba(239,68,68,0.15)",
+                    color: p.alive ? "#22c55e" : "#ef4444",
+                  }}>
+                    {p.alive ? "ALIVE" : "OUT"}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={s.page}>
+      <button onClick={onBack} style={s.backBtn}>&#8592; Back to Pool</button>
+      <div style={{ maxWidth: 500, margin: "0 auto" }}>
+        <div style={{ textAlign: "center", marginBottom: 24 }}>
+          <div style={{ fontSize: 64 }}>{"\u{1F480}"}</div>
+          <h2 style={{ color: "#ef4444", fontSize: 32, margin: "8px 0" }}>Eliminated</h2>
+          <p style={{ color: "#94a3b8", fontSize: 16 }}>
+            Sorry {player.name}, one of your picks didn't make it.
+          </p>
+        </div>
+
+        {/* Pick-by-pick breakdown */}
+        <h3 style={{ color: "#fff", fontSize: 18, margin: "0 0 12px 0" }}>Your Picks</h3>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {pickResults.map((pr, i) => (
+            <div key={i} style={{
+              ...s.card,
+              padding: "14px 16px",
+              borderLeft: `4px solid ${pr.pending ? "#64748b" : pr.won ? "#22c55e" : "#ef4444"}`,
+            }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div>
+                  <div style={{ color: "#64748b", fontSize: 11, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>
+                    {pr.region}
+                  </div>
+                  <div style={{ color: "#fff", fontWeight: 700, fontSize: 16 }}>
+                    {pr.team}
+                  </div>
+                  {!pr.pending && !pr.won && (
+                    <div style={{ color: "#fca5a5", fontSize: 13, marginTop: 4 }}>
+                      Lost to <strong style={{ color: "#ef4444" }}>{pr.winner}</strong>
+                    </div>
+                  )}
+                  {!pr.pending && pr.won && (
+                    <div style={{ color: "#86efac", fontSize: 13, marginTop: 4 }}>
+                      Beat {pr.opponent}
+                    </div>
+                  )}
+                </div>
+                <div style={{
+                  padding: "6px 14px", borderRadius: 20, fontWeight: 700, fontSize: 13,
+                  backgroundColor: pr.pending
+                    ? "rgba(255,255,255,0.05)"
+                    : pr.won ? "rgba(34,197,94,0.15)" : "rgba(239,68,68,0.15)",
+                  color: pr.pending ? "#64748b" : pr.won ? "#22c55e" : "#ef4444",
+                }}>
+                  {pr.pending ? "TBD" : pr.won ? "W" : "L"}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {pickResults.length === 0 && (
+          <div style={{ ...s.card, color: "#64748b", fontSize: 14, textAlign: "center" }}>
+            No picks were submitted for this round.
+          </div>
+        )}
+
+        {/* Still alive count */}
+        <div style={{
+          ...s.card, marginTop: 20, textAlign: "center",
+          background: "rgba(255,255,255,0.03)",
+        }}>
+          <div style={{ color: "#94a3b8", fontSize: 13 }}>Players still alive</div>
+          <div style={{ color: "#fff", fontSize: 28, fontWeight: 800, margin: "4px 0" }}>
+            {aliveCount} / {totalCount}
+          </div>
+        </div>
+
+        {/* Action buttons */}
+        <div style={{ display: "flex", gap: 12, justifyContent: "center", marginTop: 20, flexWrap: "wrap" }}>
+          <button onClick={() => setShowLeaderboard(true)} style={s.btnPrimary}>
+            View Leaderboard
+          </button>
+          <button onClick={onBack} style={s.btnSecondary}>Back to Pool</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function PlayView({ poolId, player, onBack }) {
   const [picks, setPicks] = useState({}); // { "East-0": "Duke", ... }
   const [usedTeams, setUsedTeams] = useState([]);
@@ -723,16 +886,13 @@ function PlayView({ poolId, player, onBack }) {
 
   if (!player.alive) {
     return (
-      <div style={{ ...s.page, ...s.center }}>
-        <div style={{ textAlign: "center", maxWidth: 400 }}>
-          <div style={{ fontSize: 64 }}>&#128128;</div>
-          <h2 style={{ color: "#ef4444", fontSize: 32 }}>Eliminated</h2>
-          <p style={{ color: "#94a3b8", fontSize: 16, marginTop: 8 }}>
-            Sorry {player.name}, your picks didn't survive. Better luck next year!
-          </p>
-          <button onClick={onBack} style={{ ...s.btnSecondary, marginTop: 20 }}>Back to Pool</button>
-        </div>
-      </div>
+      <EliminatedView
+        poolId={poolId}
+        player={player}
+        picks={picks}
+        r32Matchups={r32Matchups}
+        onBack={onBack}
+      />
     );
   }
 
