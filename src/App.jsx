@@ -19,12 +19,57 @@ function getBracketSide(region) {
 }
 
 const ROUND_CONFIG = [
-  { name: "Round of 32", picksPerRegion: 1, totalPicks: 4, description: "Pick 1 team per region (4 total). All must win." },
-  { name: "Sweet 16", picksPerRegion: null, totalPicks: 2, description: "Pick 2 teams from opposite sides of the bracket. Both must win.", bracketSideRule: true },
-  { name: "Elite 8", picksPerRegion: null, totalPicks: 1, description: "Pick 1 team to advance. Must win." },
-  { name: "Final Four", picksPerRegion: null, totalPicks: 1, description: "Pick 1 team to advance. Must win." },
-  { name: "Championship", picksPerRegion: null, totalPicks: 1, description: "Pick 1 team. Hope you haven't used them!" },
+  { name: "Round of 32", picksPerRegion: 1, totalPicks: 4, description: "Pick 1 team per region (4 total). All must win.", lockTime: "2026-03-21T12:10:00-04:00" },
+  { name: "Sweet 16", picksPerRegion: null, totalPicks: 2, description: "Pick 2 teams from opposite sides of the bracket. Both must win.", bracketSideRule: true, lockTime: "2026-03-27T19:00:00-04:00" },
+  { name: "Elite 8", picksPerRegion: null, totalPicks: 1, description: "Pick 1 team to advance. Must win.", lockTime: "2026-03-29T14:00:00-04:00" },
+  { name: "Final Four", picksPerRegion: null, totalPicks: 1, description: "Pick 1 team to advance. Must win.", lockTime: "2026-04-04T18:00:00-04:00" },
+  { name: "Championship", picksPerRegion: null, totalPicks: 1, description: "Pick 1 team. Hope you haven't used them!", lockTime: "2026-04-06T21:00:00-04:00" },
 ];
+
+function isBeforeDeadline(roundIdx) {
+  return new Date() < new Date(ROUND_CONFIG[roundIdx].lockTime);
+}
+
+function formatDeadline(isoStr) {
+  const d = new Date(isoStr);
+  return d.toLocaleString("en-US", {
+    weekday: "short", month: "short", day: "numeric",
+    hour: "numeric", minute: "2-digit", timeZoneName: "short",
+  });
+}
+
+function useCountdown(targetISO) {
+  const [timeLeft, setTimeLeft] = useState("");
+  const [expired, setExpired] = useState(false);
+
+  useEffect(() => {
+    function update() {
+      const now = Date.now();
+      const target = new Date(targetISO).getTime();
+      const diff = target - now;
+      if (diff <= 0) {
+        setTimeLeft("LOCKED");
+        setExpired(true);
+        return;
+      }
+      const hours = Math.floor(diff / 3600000);
+      const mins = Math.floor((diff % 3600000) / 60000);
+      const secs = Math.floor((diff % 60000) / 1000);
+      if (hours > 24) {
+        const days = Math.floor(hours / 24);
+        setTimeLeft(`${days}d ${hours % 24}h ${mins}m`);
+      } else {
+        setTimeLeft(`${hours}h ${mins}m ${secs}s`);
+      }
+      setExpired(false);
+    }
+    update();
+    const iv = setInterval(update, 1000);
+    return () => clearInterval(iv);
+  }, [targetISO]);
+
+  return { timeLeft, expired };
+}
 
 const FIRST_ROUND = {
   East: [
@@ -388,13 +433,16 @@ function PoolLobby({ poolId, player, onPlay, onLeaderboard, onAdmin }) {
       message: "Check back to see which of your friends are still alive and kicking!",
     };
   } else if (hasLockedCurrentRound) {
+    const beforeDeadline = isBeforeDeadline(currentRound);
     statusBanner = {
       bg: "rgba(34,197,94,0.15)",
       border: "rgba(34,197,94,0.3)",
       color: "#86efac",
       icon: "\u2705",
       title: `${currentRoundConfig.name} picks locked!`,
-      message: "Your picks are in. Results will be graded once the round wraps up. Good luck!",
+      message: beforeDeadline
+        ? `Your picks are in! You can still edit them before the deadline (${formatDeadline(currentRoundConfig.lockTime)}).`
+        : "Your picks are in. Results will be graded once the round wraps up. Good luck!",
     };
   } else {
     statusBanner = {
@@ -403,7 +451,7 @@ function PoolLobby({ poolId, player, onPlay, onLeaderboard, onAdmin }) {
       color: "#fdba74",
       icon: "\u{1F6A8}",
       title: `${currentRoundConfig.name} is active!`,
-      message: "Don't forget to make and lock your picks before the games finish!",
+      message: `Don't forget to make and lock your picks before ${formatDeadline(currentRoundConfig.lockTime)}!`,
     };
   }
 
@@ -498,9 +546,13 @@ function PlayView({ poolId, player, onBack }) {
   const [lockedRounds, setLockedRounds] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [editMode, setEditMode] = useState(false);
+  const [saveMessage, setSaveMessage] = useState("");
 
   const r32Matchups = getR32Matchups();
   const currentRound = 0; // Only R32 for now
+  const config = ROUND_CONFIG[currentRound];
+  const { timeLeft, expired: deadlinePassed } = useCountdown(config.lockTime);
 
   useEffect(() => {
     async function load() {
@@ -510,7 +562,6 @@ function PlayView({ poolId, player, onBack }) {
       ]);
       setUsedTeams(used);
 
-      // Build current picks and locked rounds
       const locked = [];
       const currentPicks = {};
       for (const p of allPicks) {
@@ -526,8 +577,26 @@ function PlayView({ poolId, player, onBack }) {
     load();
   }, [player.id]);
 
-  const isLocked = lockedRounds.includes(currentRound);
-  const config = ROUND_CONFIG[currentRound];
+  // Auto-lock when deadline passes
+  useEffect(() => {
+    if (deadlinePassed && !lockedRounds.includes(currentRound)) {
+      const totalPicked = Object.values(picks).filter(Boolean).length;
+      if (totalPicked > 0) {
+        // Auto-save and lock whatever they have
+        (async () => {
+          await savePicks();
+          await api(`/players/${player.id}/lock`, { method: "POST", body: { round: currentRound } });
+          setLockedRounds((prev) => [...prev, currentRound]);
+          // Trigger server-side auto-lock for all players
+          await api(`/auto-lock/${currentRound}`, { method: "POST" });
+        })();
+      }
+    }
+  }, [deadlinePassed]);
+
+  const isManuallyLocked = lockedRounds.includes(currentRound);
+  const isLocked = isManuallyLocked || deadlinePassed;
+  const canEdit = isManuallyLocked && !deadlinePassed; // Locked but deadline hasn't passed = can edit
 
   // Count picks per region
   function regionPickCount(region) {
@@ -535,7 +604,7 @@ function PlayView({ poolId, player, onBack }) {
   }
 
   function handlePick(region, matchupIdx, team) {
-    if (isLocked) return;
+    if (isLocked && !editMode) return;
     const key = `${region}-${matchupIdx}`;
 
     setPicks((prev) => {
@@ -610,22 +679,39 @@ function PlayView({ poolId, player, onBack }) {
         return { region, matchup_idx: parseInt(idx), team };
       });
 
-    await api(`/players/${player.id}/picks`, {
+    const result = await api(`/players/${player.id}/picks`, {
       method: "POST",
       body: { round: currentRound, picks: pickArray },
     });
     setSaving(false);
+
+    if (result.error) {
+      setSaveMessage(result.error);
+    } else {
+      setSaveMessage("Picks saved!");
+      setTimeout(() => setSaveMessage(""), 3000);
+    }
+    return result;
   }
 
   async function lockPicks() {
-    if (!window.confirm("Lock your picks? This cannot be undone!")) return;
-    await savePicks();
+    if (!window.confirm("Lock your picks? You can still edit them until the deadline.")) return;
+    const saveResult = await savePicks();
+    if (saveResult?.error) return;
     await api(`/players/${player.id}/lock`, { method: "POST", body: { round: currentRound } });
     setLockedRounds((prev) => [...prev, currentRound]);
+    setEditMode(false);
 
-    // Update used teams
     const used = await api(`/players/${player.id}/used-teams`);
     setUsedTeams(used);
+  }
+
+  async function unlockForEditing() {
+    // Unlock picks on the server so they can be re-submitted
+    // The server will re-lock them when the player saves again
+    setEditMode(true);
+    // Remove from lockedRounds locally so UI opens up
+    setLockedRounds((prev) => prev.filter((r) => r !== currentRound));
   }
 
   const totalPicked = Object.values(picks).filter(Boolean).length;
@@ -672,6 +758,27 @@ function PlayView({ poolId, player, onBack }) {
         <h2 style={{ color: "#fff", fontSize: 28, margin: 0 }}>{config.name}</h2>
         <p style={{ color: "#94a3b8", fontSize: 14, marginTop: 4 }}>{config.description}</p>
 
+        {/* Countdown timer */}
+        <div style={{
+          display: "inline-flex", alignItems: "center", gap: 8, marginTop: 10,
+          padding: "8px 16px", borderRadius: 20,
+          backgroundColor: deadlinePassed ? "rgba(239,68,68,0.15)" : "rgba(249,115,22,0.15)",
+          border: `1px solid ${deadlinePassed ? "rgba(239,68,68,0.3)" : "rgba(249,115,22,0.3)"}`,
+        }}>
+          <span style={{ fontSize: 13, color: "#94a3b8" }}>
+            {deadlinePassed ? "Picks locked" : "Locks in:"}
+          </span>
+          <span style={{
+            fontWeight: 700, fontSize: 15, fontFamily: "monospace",
+            color: deadlinePassed ? "#ef4444" : timeLeft.startsWith("0h") ? "#ef4444" : "#f97316",
+          }}>
+            {timeLeft}
+          </span>
+        </div>
+        <div style={{ color: "#64748b", fontSize: 11, marginTop: 4 }}>
+          Deadline: {formatDeadline(config.lockTime)}
+        </div>
+
         {config.bracketSideRule && (
           <div style={{
             display: "flex", justifyContent: "center", gap: 16, marginTop: 10,
@@ -683,16 +790,38 @@ function PlayView({ poolId, player, onBack }) {
           </div>
         )}
 
-        {isLocked && (
-          <div style={{
-            display: "inline-block", marginTop: 12, padding: "8px 20px", borderRadius: 20,
-            backgroundColor: "rgba(34,197,94,0.15)", color: "#22c55e", fontWeight: 700, fontSize: 13,
-          }}>
-            Picks Locked &#10003;
+        {isManuallyLocked && !editMode && (
+          <div style={{ marginTop: 12 }}>
+            <div style={{
+              display: "inline-block", padding: "8px 20px", borderRadius: 20,
+              backgroundColor: "rgba(34,197,94,0.15)", color: "#22c55e", fontWeight: 700, fontSize: 13,
+            }}>
+              Picks Locked &#10003;
+            </div>
+            {canEdit && (
+              <div style={{ marginTop: 8 }}>
+                <button onClick={unlockForEditing} style={{
+                  background: "none", border: "1px solid #334155", borderRadius: 8,
+                  color: "#94a3b8", padding: "6px 16px", fontSize: 12, cursor: "pointer",
+                }}>
+                  Edit picks (before deadline)
+                </button>
+              </div>
+            )}
           </div>
         )}
 
-        {!isLocked && (
+        {editMode && (
+          <div style={{
+            display: "inline-block", marginTop: 12, padding: "8px 20px", borderRadius: 20,
+            backgroundColor: "rgba(249,115,22,0.15)", color: "#f97316", fontWeight: 700, fontSize: 13,
+            border: "1px solid rgba(249,115,22,0.3)",
+          }}>
+            Editing picks... remember to re-lock when done!
+          </div>
+        )}
+
+        {!isLocked && !editMode && (
           <div style={{
             display: "inline-flex", alignItems: "center", gap: 6, marginTop: 12,
             padding: "8px 20px", borderRadius: 20,
@@ -767,7 +896,7 @@ function PlayView({ poolId, player, onBack }) {
                               team={team}
                               selected={isSelected}
                               used={isUsed}
-                              disabled={isLocked || isUsed}
+                              disabled={(isLocked && !editMode) || isUsed}
                               onClick={() => handlePick(region, mIdx, team.name)}
                             />
                           );
@@ -783,7 +912,7 @@ function PlayView({ poolId, player, onBack }) {
       </div>
 
       {/* Action buttons */}
-      {!isLocked && (
+      {(!isLocked || editMode) && (
         <div style={{ textAlign: "center", marginTop: 24, paddingBottom: 40 }}>
           <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
             <button onClick={savePicks} disabled={saving} style={{
@@ -798,12 +927,20 @@ function PlayView({ poolId, player, onBack }) {
               cursor: allRegionsFilled ? "pointer" : "not-allowed",
               opacity: allRegionsFilled ? 1 : 0.7,
             }}>
-              Lock Picks
+              {editMode ? "Re-Lock Picks" : "Lock Picks"}
             </button>
           </div>
-          {allRegionsFilled && (
-            <p style={{ color: "#fca5a5", fontSize: 12, marginTop: 8 }}>
-              Warning: Picks cannot be changed after locking!
+          {!deadlinePassed && (
+            <p style={{ color: "#86efac", fontSize: 12, marginTop: 8 }}>
+              You can edit your picks anytime before the deadline, even after locking.
+            </p>
+          )}
+          {saveMessage && (
+            <p style={{
+              color: saveMessage.includes("error") || saveMessage.includes("Deadline") ? "#ef4444" : "#22c55e",
+              fontSize: 13, marginTop: 8, fontWeight: 600,
+            }}>
+              {saveMessage}
             </p>
           )}
         </div>
