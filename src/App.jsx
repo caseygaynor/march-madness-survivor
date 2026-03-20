@@ -6,11 +6,23 @@ import { useState, useEffect, useCallback } from "react";
 
 const REGIONS = ["East", "South", "West", "Midwest"];
 
+// Bracket sides: In the 2026 NCAA Tournament, the Final Four pairs
+// East vs. West (Left side) and South vs. Midwest (Right side).
+// Sweet 16 picks must come from opposite sides of the bracket.
+const BRACKET_SIDES = {
+  left: ["East", "West"],
+  right: ["South", "Midwest"],
+};
+
+function getBracketSide(region) {
+  return BRACKET_SIDES.left.includes(region) ? "left" : "right";
+}
+
 const ROUND_CONFIG = [
-  { name: "Round of 32", picksPerRegion: 1, totalPicks: 4, description: "Pick 1 team per region (4 total)" },
-  { name: "Sweet 16", picksPerRegion: null, totalPicks: 2, description: "Pick 2 teams to advance" },
-  { name: "Elite 8", picksPerRegion: null, totalPicks: 1, description: "Pick 1 team to advance" },
-  { name: "Final Four", picksPerRegion: null, totalPicks: 1, description: "Pick 1 team to advance" },
+  { name: "Round of 32", picksPerRegion: 1, totalPicks: 4, description: "Pick 1 team per region (4 total). All must win." },
+  { name: "Sweet 16", picksPerRegion: null, totalPicks: 2, description: "Pick 2 teams from opposite sides of the bracket. Both must win.", bracketSideRule: true },
+  { name: "Elite 8", picksPerRegion: null, totalPicks: 1, description: "Pick 1 team to advance. Must win." },
+  { name: "Final Four", picksPerRegion: null, totalPicks: 1, description: "Pick 1 team to advance. Must win." },
   { name: "Championship", picksPerRegion: null, totalPicks: 1, description: "Pick 1 team. Hope you haven't used them!" },
 ];
 
@@ -180,7 +192,7 @@ function HomeView({ onCreatePool, onJoinPool }) {
           <h3 style={{ color: "#f97316", margin: "0 0 12px 0", fontSize: 16 }}>How It Works</h3>
           <div style={{ color: "#cbd5e1", fontSize: 14, lineHeight: 1.8 }}>
             <div><strong style={{ color: "#fff" }}>Round of 32:</strong> Pick 1 team per region (4 picks). All must win.</div>
-            <div><strong style={{ color: "#fff" }}>Sweet 16:</strong> Pick 2 teams. Both must win.</div>
+            <div><strong style={{ color: "#fff" }}>Sweet 16:</strong> Pick 2 teams from opposite sides of the bracket. Both must win.</div>
             <div><strong style={{ color: "#fff" }}>Elite 8:</strong> Pick 1 team. Must win.</div>
             <div><strong style={{ color: "#fff" }}>Final Four:</strong> Pick 1 team. Must win.</div>
             <div><strong style={{ color: "#fff" }}>Championship:</strong> Pick 1 team. Hope you haven't used them!</div>
@@ -345,23 +357,81 @@ function JoinPoolView({ onBack, onJoined, initialCode }) {
 
 function PoolLobby({ poolId, player, onPlay, onLeaderboard, onAdmin }) {
   const [pool, setPool] = useState(null);
+  const [playerPicks, setPlayerPicks] = useState(null);
 
   useEffect(() => {
     api(`/pools/${poolId}`).then(setPool);
-  }, [poolId]);
+    api(`/players/${player.id}/picks`).then(setPlayerPicks);
+  }, [poolId, player.id]);
 
   if (!pool) return <div style={{ ...s.page, ...s.center }}><div style={{ color: "#64748b" }}>Loading...</div></div>;
 
   const shareUrl = typeof window !== "undefined" ? `${window.location.origin}?pool=${poolId}` : "";
 
+  // Figure out round status for the player
+  const lockedRounds = playerPicks
+    ? [...new Set(playerPicks.filter((p) => p.locked).map((p) => p.round))]
+    : [];
+  const currentRound = 0; // R32 for now
+  const hasLockedCurrentRound = lockedRounds.includes(currentRound);
+  const currentRoundConfig = ROUND_CONFIG[currentRound];
+
+  // Status banner logic
+  let statusBanner = null;
+  if (!player.alive) {
+    statusBanner = {
+      bg: "rgba(239,68,68,0.15)",
+      border: "rgba(239,68,68,0.3)",
+      color: "#fca5a5",
+      icon: "\u{1F480}",
+      title: "You've been eliminated",
+      message: "Check back to see which of your friends are still alive and kicking!",
+    };
+  } else if (hasLockedCurrentRound) {
+    statusBanner = {
+      bg: "rgba(34,197,94,0.15)",
+      border: "rgba(34,197,94,0.3)",
+      color: "#86efac",
+      icon: "\u2705",
+      title: `${currentRoundConfig.name} picks locked!`,
+      message: "Your picks are in. Results will be graded once the round wraps up. Good luck!",
+    };
+  } else {
+    statusBanner = {
+      bg: "rgba(249,115,22,0.15)",
+      border: "rgba(249,115,22,0.3)",
+      color: "#fdba74",
+      icon: "\u{1F6A8}",
+      title: `${currentRoundConfig.name} is active!`,
+      message: "Don't forget to make and lock your picks before the games finish!",
+    };
+  }
+
   return (
     <div style={{ ...s.page, ...s.center }}>
       <div style={{ textAlign: "center", maxWidth: 500 }}>
-        <div style={{ fontSize: 48, marginBottom: 12 }}>🏀</div>
+        <div style={{ fontSize: 48, marginBottom: 12 }}>{"\u{1F3C0}"}</div>
         <h2 style={{ color: "#fff", fontSize: 32, margin: "0 0 4px 0" }}>{pool.name}</h2>
         <p style={{ color: "#64748b", fontSize: 14, marginBottom: 8 }}>
           Logged in as <strong style={{ color: "#f97316" }}>{player.name}</strong>
         </p>
+
+        {/* Round status banner */}
+        {statusBanner && (
+          <div style={{
+            padding: "16px 20px", borderRadius: 12, marginBottom: 20,
+            backgroundColor: statusBanner.bg, border: `1px solid ${statusBanner.border}`,
+            textAlign: "left",
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+              <span style={{ fontSize: 20 }}>{statusBanner.icon}</span>
+              <span style={{ color: statusBanner.color, fontWeight: 700, fontSize: 15 }}>{statusBanner.title}</span>
+            </div>
+            <div style={{ color: "#94a3b8", fontSize: 13, lineHeight: 1.5, paddingLeft: 28 }}>
+              {statusBanner.message}
+            </div>
+          </div>
+        )}
 
         <div style={{
           display: "inline-block", padding: "10px 24px", borderRadius: 8,
@@ -406,7 +476,12 @@ function PoolLobby({ poolId, player, onPlay, onLeaderboard, onAdmin }) {
         )}
 
         <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
-          <button onClick={onPlay} style={s.btnPrimary}>Make Picks</button>
+          <button onClick={onPlay} style={{
+            ...s.btnPrimary,
+            ...((!player.alive || hasLockedCurrentRound) ? {} : { animation: "pulse 2s infinite" }),
+          }}>
+            {hasLockedCurrentRound ? "View Picks" : "Make Picks"}
+          </button>
           <button onClick={onLeaderboard} style={s.btnSecondary}>Leaderboard</button>
           <button onClick={onAdmin} style={{
             ...s.btnSecondary, borderColor: "rgba(255,255,255,0.1)", color: "#64748b", fontSize: 14,
@@ -477,6 +552,41 @@ function PlayView({ poolId, player, onBack }) {
         for (const k of Object.keys(next)) {
           if (k.startsWith(region + "-") && k !== key) {
             delete next[k];
+          }
+        }
+      } else if (config.bracketSideRule) {
+        // Sweet 16: enforce picks from opposite sides of the bracket
+        const thisSide = getBracketSide(region);
+        const existingPicks = Object.entries(next).filter(([, v]) => v);
+        const isSwitch = next[key] != null;
+
+        if (!isSwitch && existingPicks.length >= config.totalPicks) {
+          // Already at max picks. Check if we can swap same-side pick.
+          const sameSidePick = existingPicks.find(([k]) => {
+            const pickRegion = k.split("-")[0];
+            return getBracketSide(pickRegion) === thisSide;
+          });
+          if (sameSidePick) {
+            // Replace the existing same-side pick
+            delete next[sameSidePick[0]];
+          } else {
+            return prev; // Can't add, already have picks on both sides
+          }
+        }
+
+        if (!isSwitch) {
+          // Check that we don't already have a pick on this side
+          const sameSideCount = existingPicks.filter(([k]) => {
+            const pickRegion = k.split("-")[0];
+            return getBracketSide(pickRegion) === thisSide && k !== key;
+          }).length;
+          if (sameSideCount >= 1) {
+            // Remove the existing same-side pick to replace it
+            const existing = existingPicks.find(([k]) => {
+              const pickRegion = k.split("-")[0];
+              return getBracketSide(pickRegion) === thisSide;
+            });
+            if (existing) delete next[existing[0]];
           }
         }
       } else {
@@ -561,6 +671,17 @@ function PlayView({ poolId, player, onBack }) {
 
         <h2 style={{ color: "#fff", fontSize: 28, margin: 0 }}>{config.name}</h2>
         <p style={{ color: "#94a3b8", fontSize: 14, marginTop: 4 }}>{config.description}</p>
+
+        {config.bracketSideRule && (
+          <div style={{
+            display: "flex", justifyContent: "center", gap: 16, marginTop: 10,
+            fontSize: 12, color: "#94a3b8",
+          }}>
+            <span>Left side: <strong style={{ color: "#fff" }}>{BRACKET_SIDES.left.join(" / ")}</strong></span>
+            <span style={{ color: "#334155" }}>|</span>
+            <span>Right side: <strong style={{ color: "#fff" }}>{BRACKET_SIDES.right.join(" / ")}</strong></span>
+          </div>
+        )}
 
         {isLocked && (
           <div style={{
