@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import Database from 'better-sqlite3';
 import { mkdirSync } from 'fs';
+import cron from 'node-cron';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -62,9 +63,23 @@ db.exec(`
   );
 `);
 
-// Migration: add seed column if missing (for existing DBs)
+// Migration: add columns if missing (for existing DBs)
 try { db.exec('ALTER TABLE picks ADD COLUMN seed INTEGER DEFAULT 0'); } catch(e) { /* already exists */ }
 try { db.exec('ALTER TABLE players ADD COLUMN eliminated_round INTEGER DEFAULT -1'); } catch(e) { /* already exists */ }
+// pick_result: null = pending, 'correct' = team won, 'incorrect' = team lost
+try { db.exec("ALTER TABLE picks ADD COLUMN pick_result TEXT DEFAULT NULL"); } catch(e) { /* already exists */ }
+
+// Sync log table - tracks ESPN sync runs
+db.exec(`
+  CREATE TABLE IF NOT EXISTS sync_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    round INTEGER NOT NULL,
+    games_synced INTEGER DEFAULT 0,
+    picks_graded INTEGER DEFAULT 0,
+    players_eliminated INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+`);
 
 // ============================================================
 // TOURNAMENT SCHEDULE - 2026 NCAA Men's Tournament
@@ -89,7 +104,7 @@ const ROUND_SCHEDULE = [
     round: 2,
     name: "Elite 8",
     lockTime: "2026-03-29T14:00:00-04:00",  // Sat March 29, 2 PM ET
-    endDate: "2026-03-29",                    // Sun March 30
+    endDate: "2026-03-30",                    // Sun March 30
     gradeable: true,
   },
   {
@@ -118,41 +133,81 @@ function isRoundLocked(roundIdx) {
 // ESPN SCORES API INTEGRATION
 // ============================================================
 
-// Team name mapping: ESPN names may differ slightly from our bracket names
+// Team name mapping: ESPN shortDisplayName/displayName -> our bracket name
+// ESPN uses shortDisplayName like "Duke", "Michigan St" and
+// displayName like "Duke Blue Devils", "Michigan State Spartans"
 const TEAM_NAME_MAP = {
+  // Short display name fixes
   "Miami": "Miami (FL)",
+  "Michigan St": "Michigan State",
   "Hawai'i": "Hawai'i",
   "Hawaii": "Hawai'i",
   "UConn": "UConn",
-  "Connecticut": "UConn",
   "St. John's": "St. John's",
   "St John's": "St. John's",
   "VCU": "VCU",
-  "Virginia Commonwealth": "VCU",
   "UCF": "UCF",
-  "Texas-San Antonio": "UTSA",
-  "Prairie View": "Prairie View A&M",
-  "Prairie View A&M": "Prairie View A&M",
   "LIU": "Long Island",
-  "Long Island University": "Long Island",
   "Cal Baptist": "Cal Baptist",
-  "California Baptist": "Cal Baptist",
   "Miami (OH)": "Miami (OH)",
   "Miami Ohio": "Miami (OH)",
   "McNeese": "McNeese State",
-  "McNeese State": "McNeese State",
+  "McNeese St": "McNeese State",
+  "Kennesaw St": "Kennesaw State",
   "Kennesaw St.": "Kennesaw State",
-  "Kennesaw State": "Kennesaw State",
+  "North Dakota St": "North Dakota State",
   "North Dakota St.": "North Dakota State",
-  "North Dakota State": "North Dakota State",
+  "Wright St": "Wright State",
   "Wright St.": "Wright State",
-  "Wright State": "Wright State",
+  "Tennessee St": "Tennessee State",
   "Tennessee St.": "Tennessee State",
-  "Tennessee State": "Tennessee State",
+  "High Point": "High Point",
+  "Prairie View": "Prairie View A&M",
+  "Prairie View A&M": "Prairie View A&M",
+  "S Florida": "South Florida",
+  "South Florida": "South Florida",
+  "USF": "South Florida",
+  "N Iowa": "Northern Iowa",
+  "Northern Iowa": "Northern Iowa",
+  // Full displayName mappings (ESPN returns "Team Mascot" format)
+  "Connecticut Huskies": "UConn",
+  "Virginia Commonwealth Rams": "VCU",
+  "Long Island University Sharks": "Long Island",
+  "California Baptist Lancers": "Cal Baptist",
+  "Miami Hurricanes": "Miami (FL)",
+  "Miami (OH) RedHawks": "Miami (OH)",
+  "Michigan State Spartans": "Michigan State",
+  "McNeese State Cowboys": "McNeese State",
+  "McNeese Cowboys": "McNeese State",
+  "Kennesaw State Owls": "Kennesaw State",
+  "North Dakota State Bison": "North Dakota State",
+  "Wright State Raiders": "Wright State",
+  "Tennessee State Tigers": "Tennessee State",
+  "Prairie View A&M Panthers": "Prairie View A&M",
+  "South Florida Bulls": "South Florida",
+  "Northern Iowa Panthers": "Northern Iowa",
+  "High Point Panthers": "High Point",
+  "St. John's Red Storm": "St. John's",
+  "Iowa State Cyclones": "Iowa State",
+  "Texas A&M Aggies": "Texas A&M",
+  "Utah State Aggies": "Utah State",
+  "Ohio State Buckeyes": "Ohio State",
+  "Saint Louis Billikens": "Saint Louis",
+  "Santa Clara Broncos": "Santa Clara",
 };
 
 function normalizeTeamName(espnName) {
   return TEAM_NAME_MAP[espnName] || espnName;
+}
+
+// Resolve ESPN team object to our bracket name
+// Prefers shortDisplayName (e.g. "Duke") over displayName (e.g. "Duke Blue Devils")
+function resolveESPNTeamName(teamObj) {
+  const short = teamObj?.shortDisplayName;
+  const full = teamObj?.displayName;
+  if (short && TEAM_NAME_MAP[short]) return TEAM_NAME_MAP[short];
+  if (full && TEAM_NAME_MAP[full]) return TEAM_NAME_MAP[full];
+  return short || full || 'Unknown';
 }
 
 let cachedScores = null;
@@ -178,6 +233,9 @@ async function fetchESPNScores(dateStr) {
       const status = competition.status?.type?.name; // STATUS_FINAL, STATUS_IN_PROGRESS, STATUS_SCHEDULED
       const statusDetail = competition.status?.type?.shortDetail;
 
+      const homeName = resolveESPNTeamName(homeTeam.team);
+      const awayName = resolveESPNTeamName(awayTeam.team);
+
       games.push({
         id: event.id,
         status,
@@ -185,21 +243,19 @@ async function fetchESPNScores(dateStr) {
         completed: status === 'STATUS_FINAL',
         inProgress: status === 'STATUS_IN_PROGRESS',
         home: {
-          name: normalizeTeamName(homeTeam.team?.displayName || homeTeam.team?.shortDisplayName),
+          name: homeName,
           shortName: homeTeam.team?.abbreviation,
           score: parseInt(homeTeam.score) || 0,
           seed: parseInt(homeTeam.curatedRank?.current) || null,
         },
         away: {
-          name: normalizeTeamName(awayTeam.team?.displayName || awayTeam.team?.shortDisplayName),
+          name: awayName,
           shortName: awayTeam.team?.abbreviation,
           score: parseInt(awayTeam.score) || 0,
           seed: parseInt(awayTeam.curatedRank?.current) || null,
         },
         winner: status === 'STATUS_FINAL'
-          ? (parseInt(homeTeam.score) > parseInt(awayTeam.score)
-            ? normalizeTeamName(homeTeam.team?.displayName || homeTeam.team?.shortDisplayName)
-            : normalizeTeamName(awayTeam.team?.displayName || awayTeam.team?.shortDisplayName))
+          ? (parseInt(homeTeam.score) > parseInt(awayTeam.score) ? homeName : awayName)
           : null,
       });
     }
@@ -232,6 +288,226 @@ async function fetchRoundScores(roundIdx) {
     if (games) allGames.push(...games);
   }
   return allGames;
+}
+
+// ============================================================
+// AUTO-SYNC & AUTO-GRADE ENGINE
+// ============================================================
+
+// All teams in our bracket (for matching ESPN names)
+const ALL_BRACKET_TEAMS = new Set();
+for (const region of ['East', 'South', 'West', 'Midwest']) {
+  // We'll populate this from the results + picks tables dynamically
+}
+
+// Match an ESPN game to a specific matchup in our bracket
+// Returns { region, matchup_idx } or null
+function matchGameToMatchup(game, round, poolId) {
+  // Get all existing results for this pool + round to know which matchups exist
+  const existingResults = db.prepare(
+    'SELECT region, matchup_idx, winner FROM results WHERE pool_id = ? AND round = ?'
+  ).all(poolId, round);
+
+  // Get all picks for this round to find which teams are in which matchups
+  const allPicks = db.prepare(
+    'SELECT DISTINCT region, matchup_idx, team FROM picks WHERE round = ?'
+  ).all(round);
+
+  // Build a map of matchup_idx -> teams in that matchup
+  const matchupTeams = {};
+  for (const pick of allPicks) {
+    const key = `${pick.region}-${pick.matchup_idx}`;
+    if (!matchupTeams[key]) matchupTeams[key] = new Set();
+    matchupTeams[key].add(pick.team);
+  }
+
+  // Check if either team in the ESPN game matches a team in any matchup
+  const gameTeams = [game.home.name, game.away.name];
+
+  for (const [key, teams] of Object.entries(matchupTeams)) {
+    for (const gt of gameTeams) {
+      if (teams.has(gt)) {
+        const [region, idx] = key.split('-');
+        return { region, matchup_idx: parseInt(idx) };
+      }
+    }
+  }
+
+  // Also check existing results
+  for (const r of existingResults) {
+    if (gameTeams.includes(r.winner)) {
+      return { region: r.region, matchup_idx: r.matchup_idx };
+    }
+  }
+
+  return null;
+}
+
+// Core sync function: fetch ESPN scores, update results, grade individual picks
+async function syncRoundScores(roundIdx) {
+  const schedule = ROUND_SCHEDULE[roundIdx];
+  if (!schedule || !schedule.gradeable) return { synced: 0, graded: 0, eliminated: 0 };
+
+  // Only sync if round is locked (games have started)
+  if (!isRoundLocked(roundIdx)) return { synced: 0, graded: 0, eliminated: 0 };
+
+  const games = await fetchRoundScores(roundIdx);
+  if (!games || games.length === 0) return { synced: 0, graded: 0, eliminated: 0, error: 'No ESPN data' };
+
+  const completedGames = games.filter(g => g.completed);
+  if (completedGames.length === 0) return { synced: 0, graded: 0, eliminated: 0 };
+
+  // Get all pools
+  const pools = db.prepare('SELECT id FROM pools').all();
+
+  let totalSynced = 0;
+  let totalGraded = 0;
+  let totalEliminated = 0;
+
+  for (const pool of pools) {
+    // For each completed game, try to match it to a matchup and enter the result
+    const upsertResult = db.prepare(`
+      INSERT INTO results (pool_id, round, region, matchup_idx, winner)
+      VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(pool_id, round, region, matchup_idx) DO UPDATE SET winner = excluded.winner
+    `);
+
+    for (const game of completedGames) {
+      const match = matchGameToMatchup(game, roundIdx, pool.id);
+      if (match) {
+        upsertResult.run(pool.id, roundIdx, match.region, match.matchup_idx, game.winner);
+        totalSynced++;
+      }
+    }
+
+    // Now grade individual picks against entered results
+    const results = db.prepare(
+      'SELECT region, matchup_idx, winner FROM results WHERE pool_id = ? AND round = ?'
+    ).all(pool.id, roundIdx);
+
+    const resultMap = {};
+    for (const r of results) {
+      resultMap[`${r.region}-${r.matchup_idx}`] = r.winner;
+    }
+
+    // Find all locked picks for this round that haven't been graded yet
+    const ungradedPicks = db.prepare(
+      'SELECT id, player_id, region, matchup_idx, team FROM picks WHERE round = ? AND locked = 1 AND pick_result IS NULL'
+    ).all(roundIdx);
+
+    const updatePickResult = db.prepare('UPDATE picks SET pick_result = ? WHERE id = ?');
+
+    for (const pick of ungradedPicks) {
+      // Check if player is in this pool
+      const player = db.prepare('SELECT pool_id FROM players WHERE id = ?').get(pick.player_id);
+      if (!player || player.pool_id !== pool.id) continue;
+
+      const key = `${pick.region}-${pick.matchup_idx}`;
+      const winner = resultMap[key];
+      if (!winner) continue; // Game not finished yet
+
+      if (winner === pick.team) {
+        updatePickResult.run('correct', pick.id);
+      } else {
+        updatePickResult.run('incorrect', pick.id);
+      }
+      totalGraded++;
+    }
+
+    // Check if ALL games in the round are done for this pool
+    const MATCHUPS_PER_ROUND = [16, 8, 4, 2, 1];
+    const expectedMatchups = MATCHUPS_PER_ROUND[roundIdx] || 0;
+    const resultCount = db.prepare(
+      'SELECT COUNT(*) as cnt FROM results WHERE pool_id = ? AND round = ?'
+    ).get(pool.id, roundIdx).cnt;
+
+    if (resultCount >= expectedMatchups) {
+      // Round is complete! Run final elimination check
+      const eliminated = finalGradeRound(pool.id, roundIdx);
+      totalEliminated += eliminated;
+    }
+  }
+
+  // Log the sync
+  db.prepare(
+    'INSERT INTO sync_log (round, games_synced, picks_graded, players_eliminated) VALUES (?, ?, ?, ?)'
+  ).run(roundIdx, totalSynced, totalGraded, totalEliminated);
+
+  console.log(`[SYNC] Round ${roundIdx}: synced=${totalSynced}, graded=${totalGraded}, eliminated=${totalEliminated}`);
+  return { synced: totalSynced, graded: totalGraded, eliminated: totalEliminated };
+}
+
+// Final round grading: eliminate players who got any pick wrong (or had no picks)
+function finalGradeRound(poolId, roundIdx) {
+  // First auto-lock any remaining unlocked picks
+  db.prepare('UPDATE picks SET locked = 1 WHERE round = ? AND locked = 0').run(roundIdx);
+
+  const results = db.prepare(
+    'SELECT region, matchup_idx, winner FROM results WHERE pool_id = ? AND round = ?'
+  ).all(poolId, roundIdx);
+  const resultMap = {};
+  for (const r of results) {
+    resultMap[`${r.region}-${r.matchup_idx}`] = r.winner;
+  }
+
+  const alivePlayers = db.prepare(
+    'SELECT id, name FROM players WHERE pool_id = ? AND alive = 1'
+  ).all(poolId);
+
+  let eliminatedCount = 0;
+
+  for (const player of alivePlayers) {
+    const picks = db.prepare(
+      'SELECT region, matchup_idx, team, pick_result FROM picks WHERE player_id = ? AND round = ? AND locked = 1'
+    ).all(player.id, roundIdx);
+
+    // No picks = eliminated
+    if (picks.length === 0) {
+      db.prepare('UPDATE players SET alive = 0, eliminated_round = ? WHERE id = ?').run(roundIdx, player.id);
+      eliminatedCount++;
+      continue;
+    }
+
+    // Any incorrect pick = eliminated
+    const hasIncorrect = picks.some(p => p.pick_result === 'incorrect');
+    if (hasIncorrect) {
+      db.prepare('UPDATE players SET alive = 0, eliminated_round = ? WHERE id = ?').run(roundIdx, player.id);
+      eliminatedCount++;
+    }
+  }
+
+  if (eliminatedCount > 0) {
+    console.log(`[GRADE] Pool ${poolId} Round ${roundIdx}: ${eliminatedCount} eliminated`);
+  }
+
+  return eliminatedCount;
+}
+
+// Determine which round should be actively syncing
+function getActiveRound() {
+  // Find the current round that's locked but not yet fully graded
+  for (let i = 0; i < ROUND_SCHEDULE.length; i++) {
+    if (!isRoundLocked(i)) return Math.max(0, i); // This round hasn't started yet
+
+    // Check if this round is fully graded across all pools
+    const pools = db.prepare('SELECT id FROM pools').all();
+    const MATCHUPS_PER_ROUND = [16, 8, 4, 2, 1];
+    const expected = MATCHUPS_PER_ROUND[i] || 0;
+
+    let allPoolsComplete = true;
+    for (const pool of pools) {
+      const count = db.prepare(
+        'SELECT COUNT(*) as cnt FROM results WHERE pool_id = ? AND round = ?'
+      ).get(pool.id, i).cnt;
+      if (count < expected) {
+        allPoolsComplete = false;
+        break;
+      }
+    }
+
+    if (!allPoolsComplete) return i; // This round still needs syncing
+  }
+  return ROUND_SCHEDULE.length - 1; // Tournament over
 }
 
 // --- Helpers ---
@@ -342,9 +618,9 @@ app.post('/api/pools/:id/join', (req, res) => {
   }
 });
 
-// Get a player's picks
+// Get a player's picks (now includes pick_result)
 app.get('/api/players/:playerId/picks', (req, res) => {
-  const picks = db.prepare('SELECT round, region, matchup_idx, team, locked FROM picks WHERE player_id = ?').all(req.params.playerId);
+  const picks = db.prepare('SELECT round, region, matchup_idx, team, locked, pick_result FROM picks WHERE player_id = ?').all(req.params.playerId);
   res.json(picks);
 });
 
@@ -509,20 +785,31 @@ app.get('/api/pools/:id/leaderboard', (req, res) => {
   }
 
   const enriched = players.map(p => {
-    const picks = db.prepare('SELECT round, region, matchup_idx, team, seed, locked FROM picks WHERE player_id = ? AND locked = 1 ORDER BY round').all(p.id);
+    const picks = db.prepare('SELECT round, region, matchup_idx, team, seed, locked, pick_result FROM picks WHERE player_id = ? AND locked = 1 ORDER BY round').all(p.id);
     const roundsLocked = [...new Set(picks.map(pk => pk.round))].length;
 
     // Tiebreaker: combined seed of all locked picks (higher = riskier = better)
     const combinedSeed = picks.reduce((sum, pk) => sum + (pk.seed || 0), 0);
 
-    // Correct picks count
+    // Correct picks count (use pick_result if available, fall back to result map)
     let correctPicks = 0;
+    let incorrectPicks = 0;
+    let pendingPicks = 0;
     for (const pk of picks) {
-      const key = `${pk.round}-${pk.region}-${pk.matchup_idx}`;
-      if (resultMap[key] && resultMap[key] === pk.team) correctPicks++;
+      if (pk.pick_result === 'correct') {
+        correctPicks++;
+      } else if (pk.pick_result === 'incorrect') {
+        incorrectPicks++;
+      } else {
+        // Fall back to result map for backward compat
+        const key = `${pk.round}-${pk.region}-${pk.matchup_idx}`;
+        if (resultMap[key] && resultMap[key] === pk.team) correctPicks++;
+        else if (resultMap[key]) incorrectPicks++;
+        else pendingPicks++;
+      }
     }
 
-    return { ...p, picks, roundsLocked, combinedSeed, correctPicks };
+    return { ...p, picks, roundsLocked, combinedSeed, correctPicks, incorrectPicks, pendingPicks };
   });
 
   // Sort: alive first, then by eliminated_round (later = better), then by combinedSeed (higher = better)
@@ -579,6 +866,165 @@ app.post('/api/pools/:id/auto-results', async (req, res) => {
   });
 });
 
+// ============================================================
+// PICK RESULTS API - Individual pick grading status
+// ============================================================
+
+// Get pick results for a player (includes pick_result for each pick)
+app.get('/api/players/:playerId/pick-results', (req, res) => {
+  const picks = db.prepare(
+    'SELECT round, region, matchup_idx, team, seed, locked, pick_result FROM picks WHERE player_id = ? AND locked = 1 ORDER BY round'
+  ).all(req.params.playerId);
+  res.json(picks);
+});
+
+// Get live sync status
+app.get('/api/sync-status', (req, res) => {
+  const activeRound = getActiveRound();
+  const lastSync = db.prepare('SELECT * FROM sync_log ORDER BY id DESC LIMIT 1').get();
+  const schedule = ROUND_SCHEDULE[activeRound];
+
+  res.json({
+    activeRound,
+    roundName: schedule?.name || 'Unknown',
+    locked: isRoundLocked(activeRound),
+    lastSync: lastSync || null,
+    nextSyncIn: 'Runs every 30 minutes during game windows',
+  });
+});
+
+// Manual sync trigger (admin)
+app.post('/api/admin/sync-now', async (req, res) => {
+  const { admin_code } = req.body;
+
+  // Verify admin code against any pool
+  const pool = db.prepare('SELECT admin_code FROM pools LIMIT 1').get();
+  if (!pool || pool.admin_code !== admin_code) {
+    return res.status(403).json({ error: 'Invalid admin code' });
+  }
+
+  const activeRound = getActiveRound();
+  const result = await syncRoundScores(activeRound);
+  res.json({ ...result, round: activeRound, roundName: ROUND_SCHEDULE[activeRound]?.name });
+});
+
+// Admin: Override a pick result manually
+app.post('/api/admin/override-pick-result', (req, res) => {
+  const { admin_code, pick_id, result: pickResult } = req.body;
+
+  const pool = db.prepare('SELECT admin_code FROM pools LIMIT 1').get();
+  if (!pool || pool.admin_code !== admin_code) {
+    return res.status(403).json({ error: 'Invalid admin code' });
+  }
+
+  if (!['correct', 'incorrect', null].includes(pickResult)) {
+    return res.status(400).json({ error: 'Invalid result. Use: correct, incorrect, or null' });
+  }
+
+  db.prepare('UPDATE picks SET pick_result = ? WHERE id = ?').run(pickResult, pick_id);
+  res.json({ ok: true, pick_id, result: pickResult });
+});
+
+// Admin: Override a game result manually
+app.post('/api/admin/override-result', (req, res) => {
+  const { admin_code, pool_id, round, region, matchup_idx, winner } = req.body;
+
+  const pool = db.prepare('SELECT * FROM pools WHERE id = ?').get(pool_id);
+  if (!pool || pool.admin_code !== admin_code) {
+    return res.status(403).json({ error: 'Invalid admin code' });
+  }
+
+  // Update the result
+  db.prepare(`
+    INSERT INTO results (pool_id, round, region, matchup_idx, winner)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(pool_id, round, region, matchup_idx) DO UPDATE SET winner = excluded.winner
+  `).run(pool_id, round, region, matchup_idx, winner);
+
+  // Re-grade all picks for this matchup
+  const picks = db.prepare(
+    'SELECT id, team FROM picks WHERE round = ? AND region = ? AND matchup_idx = ? AND locked = 1'
+  ).all(round, region, matchup_idx);
+
+  for (const pick of picks) {
+    const player = db.prepare('SELECT pool_id FROM players WHERE id = (SELECT player_id FROM picks WHERE id = ?)').get(pick.id);
+    if (player && player.pool_id === pool_id) {
+      const result = pick.team === winner ? 'correct' : 'incorrect';
+      db.prepare('UPDATE picks SET pick_result = ? WHERE id = ?').run(result, pick.id);
+    }
+  }
+
+  res.json({ ok: true, regraded: picks.length });
+});
+
+// Admin: Re-run final grading for a round (after manual overrides)
+app.post('/api/admin/regrade-round', (req, res) => {
+  const { admin_code, pool_id, round } = req.body;
+
+  const pool = db.prepare('SELECT * FROM pools WHERE id = ?').get(pool_id);
+  if (!pool || pool.admin_code !== admin_code) {
+    return res.status(403).json({ error: 'Invalid admin code' });
+  }
+
+  // Reset alive status for players eliminated in this round (so we can re-grade)
+  db.prepare('UPDATE players SET alive = 1, eliminated_round = -1 WHERE pool_id = ? AND eliminated_round = ?').run(pool_id, round);
+
+  const eliminated = finalGradeRound(pool_id, round);
+  const remaining = db.prepare('SELECT COUNT(*) as cnt FROM players WHERE pool_id = ? AND alive = 1').get(pool_id).cnt;
+
+  res.json({ eliminated, remaining, round });
+});
+
+// Get sync log history
+app.get('/api/admin/sync-log', (req, res) => {
+  const logs = db.prepare('SELECT * FROM sync_log ORDER BY id DESC LIMIT 50').all();
+  res.json(logs);
+});
+
+// ============================================================
+// CRON: ESPN SCORE SYNC
+// Runs every 30 minutes. During game windows, fetches ESPN
+// scores, updates results, and grades individual picks.
+// ============================================================
+
+let syncRunning = false;
+
+async function runScheduledSync() {
+  if (syncRunning) {
+    console.log('[CRON] Sync already running, skipping');
+    return;
+  }
+  syncRunning = true;
+  try {
+    const activeRound = getActiveRound();
+    const schedule = ROUND_SCHEDULE[activeRound];
+
+    if (!schedule || !isRoundLocked(activeRound)) {
+      console.log(`[CRON] Round ${activeRound} not locked yet, skipping sync`);
+      return;
+    }
+
+    console.log(`[CRON] Syncing ${schedule.name} (round ${activeRound})...`);
+    const result = await syncRoundScores(activeRound);
+    console.log(`[CRON] Done:`, result);
+  } catch (err) {
+    console.error('[CRON] Sync error:', err.message);
+  } finally {
+    syncRunning = false;
+  }
+}
+
+// Run every 30 minutes
+cron.schedule('*/30 * * * *', () => {
+  runScheduledSync();
+});
+
+// Also run once on startup (after a 10-second delay to let things initialize)
+setTimeout(() => {
+  console.log('[CRON] Running initial sync on startup...');
+  runScheduledSync();
+}, 10000);
+
 // Serve static files in production
 const distPath = join(__dirname, '..', 'dist');
 app.use(express.static(distPath));
@@ -589,4 +1035,6 @@ app.get('*', (req, res) => {
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`March Madness Survivor running on port ${PORT}`);
+  console.log(`[CRON] ESPN score sync scheduled: every 30 minutes`);
+  console.log(`[CRON] Active round: ${getActiveRound()} (${ROUND_SCHEDULE[getActiveRound()]?.name || 'N/A'})`);
 });

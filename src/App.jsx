@@ -874,7 +874,7 @@ function PoolLobby({ poolId, player, onPlay, onLeaderboard, onAdmin, onLiveScore
       title: `${currentRoundConfig.name} picks locked!`,
       message: beforeDeadline
         ? `Your picks are in! You can still edit them before the deadline (${formatDeadline(currentRoundConfig.lockTime)}).`
-        : "Your picks are in. Results will be graded once the round wraps up. Good luck!",
+        : "Games are underway! Check Make Picks to see your live results as games finish.",
     };
   } else {
     statusBanner = {
@@ -1356,6 +1356,7 @@ function PlayView({ poolId, player, onBack, onLiveScores }) {
   const [allResults, setAllResults] = useState([]);
   const [matchups, setMatchups] = useState(null);
   const [activeTab, setActiveTab] = useState("picks"); // "picks" or "bracket"
+  const [pickResults, setPickResults] = useState({}); // { "East-0": "correct" | "incorrect" | null }
 
   const config = ROUND_CONFIG[currentRound];
   const { timeLeft, expired: deadlinePassed } = useCountdown(config?.lockTime || "2099-01-01");
@@ -1398,6 +1399,42 @@ function PlayView({ poolId, player, onBack, onLiveScores }) {
     }
     load();
   }, [player.id, poolId]);
+
+  // Poll for pick results when locked + deadline passed (every 60 seconds)
+  useEffect(() => {
+    if (!deadlinePassed || !lockedRounds.includes(currentRound)) return;
+
+    async function fetchPickResults() {
+      try {
+        const results = await api(`/players/${player.id}/pick-results`);
+        const resultMap = {};
+        for (const r of results) {
+          if (r.round === currentRound) {
+            resultMap[`${r.region}-${r.matchup_idx}`] = r.pick_result;
+          }
+        }
+        setPickResults(resultMap);
+
+        // Also refresh pool results for bracket view
+        const poolResults = await api(`/pools/${poolId}/results`);
+        setAllResults(poolResults);
+
+        // Refresh player data to check if eliminated
+        const poolData = await api(`/pools/${poolId}`);
+        const serverPlayer = poolData.players?.find(p => p.id === player.id);
+        if (serverPlayer && !serverPlayer.alive && player.alive) {
+          // Player was just eliminated! Trigger re-render
+          player.alive = false;
+        }
+      } catch (e) {
+        // Silently fail, will retry on next poll
+      }
+    }
+
+    fetchPickResults(); // Run immediately
+    const iv = setInterval(fetchPickResults, 60000); // Then every 60s
+    return () => clearInterval(iv);
+  }, [deadlinePassed, lockedRounds, currentRound, player.id, poolId]);
 
   // Auto-lock when deadline passes
   useEffect(() => {
@@ -1713,14 +1750,6 @@ function PlayView({ poolId, player, onBack, onLiveScores }) {
                   Edit picks (before deadline)
                 </button>
               )}
-              {deadlinePassed && onLiveScores && (
-                <button onClick={() => onLiveScores(currentRound, picks)} style={{
-                  background: "none", border: "1px solid rgba(34,197,94,0.3)", borderRadius: 8,
-                  color: "#22c55e", padding: "6px 16px", fontSize: 12, cursor: "pointer",
-                }}>
-                  Watch Live Scores
-                </button>
-              )}
             </div>
           </div>
         )}
@@ -1762,8 +1791,114 @@ function PlayView({ poolId, player, onBack, onLiveScores }) {
         )}
       </div>
 
-      {/* Matchup grid */}
-      {matchups && (
+      {/* LIVE RESULTS SCORECARD - shown when picks locked + deadline passed */}
+      {deadlinePassed && isLocked && !editMode && Object.keys(picks).length > 0 && (
+        <div style={{ maxWidth: 500, margin: "0 auto" }}>
+          <h3 style={{ color: "#fff", fontSize: 18, margin: "0 0 12px 0", textAlign: "center" }}>
+            Your Picks - Live Results
+          </h3>
+          {(() => {
+            const entries = Object.entries(picks).filter(([, v]) => v);
+            const correct = entries.filter(([k]) => pickResults[k] === "correct").length;
+            const incorrect = entries.filter(([k]) => pickResults[k] === "incorrect").length;
+            const pending = entries.length - correct - incorrect;
+            return (
+              <>
+                {/* Summary bar */}
+                <div style={{
+                  display: "flex", justifyContent: "center", gap: 16, marginBottom: 16,
+                }}>
+                  <div style={{ textAlign: "center" }}>
+                    <div style={{ color: "#22c55e", fontSize: 24, fontWeight: 800 }}>{correct}</div>
+                    <div style={{ color: "#64748b", fontSize: 11, textTransform: "uppercase" }}>Won</div>
+                  </div>
+                  <div style={{ width: 1, backgroundColor: "rgba(255,255,255,0.1)" }} />
+                  <div style={{ textAlign: "center" }}>
+                    <div style={{ color: "#ef4444", fontSize: 24, fontWeight: 800 }}>{incorrect}</div>
+                    <div style={{ color: "#64748b", fontSize: 11, textTransform: "uppercase" }}>Lost</div>
+                  </div>
+                  <div style={{ width: 1, backgroundColor: "rgba(255,255,255,0.1)" }} />
+                  <div style={{ textAlign: "center" }}>
+                    <div style={{ color: "#f97316", fontSize: 24, fontWeight: 800 }}>{pending}</div>
+                    <div style={{ color: "#64748b", fontSize: 11, textTransform: "uppercase" }}>Pending</div>
+                  </div>
+                </div>
+                {incorrect > 0 && (
+                  <div style={{
+                    textAlign: "center", padding: "10px 16px", borderRadius: 10, marginBottom: 16,
+                    backgroundColor: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.25)",
+                    color: "#fca5a5", fontSize: 13, fontWeight: 600,
+                  }}>
+                    One of your picks lost. You'll be eliminated when the round is finalized.
+                  </div>
+                )}
+                {correct === entries.length && entries.length > 0 && (
+                  <div style={{
+                    textAlign: "center", padding: "10px 16px", borderRadius: 10, marginBottom: 16,
+                    backgroundColor: "rgba(34,197,94,0.12)", border: "1px solid rgba(34,197,94,0.25)",
+                    color: "#86efac", fontSize: 13, fontWeight: 600,
+                  }}>
+                    All picks correct! You're advancing to the next round!
+                  </div>
+                )}
+              </>
+            );
+          })()}
+          <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 20 }}>
+            {Object.entries(picks).filter(([, v]) => v).map(([key, team]) => {
+              const [region] = key.split("-");
+              const result = pickResults[key]; // "correct" | "incorrect" | null/undefined
+              const teamColor = getTeamColor(team);
+              const hasColor = teamColor !== "#64748b";
+
+              const borderColor = result === "correct" ? "#22c55e"
+                : result === "incorrect" ? "#ef4444"
+                : hasColor ? teamColor : "#334155";
+              const bgColor = result === "correct" ? "rgba(34,197,94,0.08)"
+                : result === "incorrect" ? "rgba(239,68,68,0.08)"
+                : hasColor ? `${teamColor}10` : "rgba(255,255,255,0.03)";
+
+              return (
+                <div key={key} style={{
+                  padding: "14px 16px", borderRadius: 12,
+                  backgroundColor: bgColor,
+                  border: `1px solid ${borderColor}40`,
+                  borderLeft: `4px solid ${borderColor}`,
+                  display: "flex", justifyContent: "space-between", alignItems: "center",
+                }}>
+                  <div>
+                    <div style={{ color: "#64748b", fontSize: 11, textTransform: "uppercase", letterSpacing: 1, marginBottom: 3 }}>
+                      {region}
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <SeedBadge seed={null} teamName={team} />
+                      <span style={{ color: "#fff", fontWeight: 700, fontSize: 16 }}>{team}</span>
+                    </div>
+                  </div>
+                  <div style={{
+                    padding: "6px 14px", borderRadius: 20, fontWeight: 700, fontSize: 13,
+                    backgroundColor: result === "correct" ? "rgba(34,197,94,0.2)"
+                      : result === "incorrect" ? "rgba(239,68,68,0.2)"
+                      : "rgba(249,115,22,0.15)",
+                    color: result === "correct" ? "#22c55e"
+                      : result === "incorrect" ? "#ef4444"
+                      : "#f97316",
+                    minWidth: 48, textAlign: "center",
+                  }}>
+                    {result === "correct" ? "W" : result === "incorrect" ? "L" : "..."}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <div style={{ textAlign: "center", color: "#475569", fontSize: 12 }}>
+            Results update automatically as games finish
+          </div>
+        </div>
+      )}
+
+      {/* Matchup grid (shown when picks not yet locked, or editing, or deadline hasn't passed) */}
+      {(!deadlinePassed || editMode || !isLocked) && matchups && (
         <div style={{
           display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
           gap: 12, maxWidth: 1200, margin: "0 auto",
