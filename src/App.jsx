@@ -1505,6 +1505,9 @@ function PlayView({ poolId, player, onBack, onLiveScores }) {
 
     const used = await api(`/players/${player.id}/used-teams`);
     setUsedTeams(used);
+    // Update current round locked teams so they don't show as "USED" in this round
+    const currentPickedTeams = Object.values(picks).filter(Boolean);
+    setCurrentRoundLockedTeams(currentPickedTeams);
   }
 
   function unlockForEditing() {
