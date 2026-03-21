@@ -250,6 +250,44 @@ app.get('/api/schedule', (req, res) => {
   res.json(schedule);
 });
 
+// Get current round for a pool (based on which rounds have been graded)
+// A round is "graded" if any results exist AND at least one player was affected
+app.get('/api/pools/:id/current-round', (req, res) => {
+  const pool = db.prepare('SELECT id FROM pools WHERE id = ?').get(req.params.id);
+  if (!pool) return res.status(404).json({ error: 'Pool not found' });
+
+  // Check which rounds have results entered
+  const roundsWithResults = db.prepare(
+    'SELECT DISTINCT round FROM results WHERE pool_id = ? ORDER BY round'
+  ).all(req.params.id).map(r => r.round);
+
+  // Check which rounds have been graded (players eliminated or survived)
+  // A round is considered "graded" if picks exist for it AND at least one player
+  // had their alive status changed, OR if results are complete for that round
+  // Simpler approach: if results exist for round N, the current round is N+1
+  // (unless round N results are incomplete)
+
+  // Count expected matchups per round
+  const MATCHUPS_PER_ROUND = [16, 8, 4, 2, 1]; // R32, S16, E8, F4, Champ
+
+  let currentRound = 0;
+  for (const r of roundsWithResults) {
+    const resultCount = db.prepare(
+      'SELECT COUNT(*) as cnt FROM results WHERE pool_id = ? AND round = ?'
+    ).get(req.params.id, r).cnt;
+
+    if (resultCount >= MATCHUPS_PER_ROUND[r]) {
+      // This round's results are complete, advance to next
+      currentRound = r + 1;
+    }
+  }
+
+  // Cap at max rounds
+  if (currentRound >= 5) currentRound = 4;
+
+  res.json({ currentRound, roundsWithResults });
+});
+
 // Get live scores for a round
 app.get('/api/scores/:round', async (req, res) => {
   const roundIdx = parseInt(req.params.round);
@@ -448,6 +486,29 @@ app.get('/api/pools/:id/leaderboard', (req, res) => {
   });
 
   res.json(enriched);
+});
+
+// Admin: Auto-fetch results from ESPN for a round
+app.post('/api/pools/:id/auto-results', async (req, res) => {
+  const { admin_code, round } = req.body;
+
+  const pool = db.prepare('SELECT * FROM pools WHERE id = ?').get(req.params.id);
+  if (!pool) return res.status(404).json({ error: 'Pool not found' });
+  if (pool.admin_code !== admin_code) return res.status(403).json({ error: 'Invalid admin code' });
+
+  const games = await fetchRoundScores(round);
+  if (!games || games.length === 0) {
+    return res.json({ error: 'Could not fetch scores from ESPN', fetched: 0 });
+  }
+
+  // Return the games so the admin can review before saving
+  const completedGames = games.filter(g => g.completed);
+  res.json({
+    games: completedGames,
+    total: games.length,
+    completed: completedGames.length,
+    inProgress: games.filter(g => g.inProgress).length,
+  });
 });
 
 // Serve static files in production

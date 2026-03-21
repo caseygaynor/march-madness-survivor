@@ -131,6 +131,100 @@ function getR32Matchups() {
   return matchups;
 }
 
+// Build matchups for any round given previous round results
+// Results format: [{ region, matchup_idx, winner }]
+function buildMatchupsForRound(roundIdx, allResults) {
+  if (roundIdx === 0) return getR32Matchups();
+
+  // Get previous round's matchups and results to determine winners
+  const prevMatchups = buildMatchupsForRound(roundIdx - 1, allResults);
+  const prevResults = allResults.filter((r) => r.round === roundIdx - 1);
+  const prevResultMap = {};
+  for (const r of prevResults) {
+    prevResultMap[`${r.region}-${r.matchup_idx}`] = r.winner;
+  }
+
+  if (roundIdx === 1) {
+    // Sweet 16: 4 matchups per region -> 2 per region (winners of adjacent R32 matchups)
+    const matchups = {};
+    for (const region of REGIONS) {
+      const prevRegion = prevMatchups[region] || [];
+      const winners = prevRegion.map((m, idx) => {
+        const winnerName = prevResultMap[`${region}-${idx}`];
+        if (!winnerName) {
+          // Result not in yet, use placeholder
+          return { name: "TBD", seed: 0, region, projected: true };
+        }
+        const team = [m.teamA, m.teamB].find((t) => t.name === winnerName);
+        return team || { name: winnerName, seed: 0, region, projected: false };
+      });
+      matchups[region] = [
+        { teamA: winners[0], teamB: winners[1] },
+        { teamA: winners[2], teamB: winners[3] },
+      ];
+    }
+    return matchups;
+  }
+
+  if (roundIdx === 2) {
+    // Elite 8: 2 matchups per region -> 1 per region
+    const matchups = {};
+    for (const region of REGIONS) {
+      const prevRegion = prevMatchups[region] || [];
+      const winners = prevRegion.map((m, idx) => {
+        const winnerName = prevResultMap[`${region}-${idx}`];
+        if (!winnerName) return { name: "TBD", seed: 0, region, projected: true };
+        const team = [m.teamA, m.teamB].find((t) => t.name === winnerName);
+        return team || { name: winnerName, seed: 0, region, projected: false };
+      });
+      matchups[region] = [{ teamA: winners[0], teamB: winners[1] }];
+    }
+    return matchups;
+  }
+
+  if (roundIdx === 3) {
+    // Final Four: 1 matchup per region -> 2 matchups total (cross-region)
+    // East vs West, South vs Midwest (based on bracket sides)
+    const regionWinners = {};
+    for (const region of REGIONS) {
+      const prevRegion = prevMatchups[region] || [];
+      const winnerName = prevResultMap[`${region}-0`];
+      if (winnerName) {
+        const team = [prevRegion[0]?.teamA, prevRegion[0]?.teamB].find((t) => t?.name === winnerName);
+        regionWinners[region] = team || { name: winnerName, seed: 0, region, projected: false };
+      } else {
+        regionWinners[region] = { name: `${region} Winner`, seed: 0, region, projected: true };
+      }
+    }
+    // Final Four matchups: left side (East vs West), right side (South vs Midwest)
+    return {
+      "Final Four": [
+        { teamA: regionWinners["East"], teamB: regionWinners["West"] },
+        { teamA: regionWinners["South"], teamB: regionWinners["Midwest"] },
+      ],
+    };
+  }
+
+  if (roundIdx === 4) {
+    // Championship: 2 Final Four winners
+    const ff = buildMatchupsForRound(3, allResults);
+    const ffMatchups = ff["Final Four"] || [];
+    const winners = ffMatchups.map((m, idx) => {
+      const winnerName = prevResultMap[`Final Four-${idx}`];
+      if (winnerName) {
+        const team = [m.teamA, m.teamB].find((t) => t?.name === winnerName);
+        return team || { name: winnerName, seed: 0, region: "Final", projected: false };
+      }
+      return { name: "TBD", seed: 0, region: "Final", projected: true };
+    });
+    return {
+      "Championship": [{ teamA: winners[0], teamB: winners[1] || { name: "TBD", seed: 0, region: "Final", projected: true } }],
+    };
+  }
+
+  return {};
+}
+
 // ============================================================
 // API HELPERS
 // ============================================================
@@ -403,10 +497,14 @@ function JoinPoolView({ onBack, onJoined, initialCode }) {
 function PoolLobby({ poolId, player, onPlay, onLeaderboard, onAdmin }) {
   const [pool, setPool] = useState(null);
   const [playerPicks, setPlayerPicks] = useState(null);
+  const [currentRound, setCurrentRound] = useState(0);
 
   useEffect(() => {
     api(`/pools/${poolId}`).then(setPool);
     api(`/players/${player.id}/picks`).then(setPlayerPicks);
+    api(`/pools/${poolId}/current-round`).then((data) => {
+      if (data.currentRound != null) setCurrentRound(data.currentRound);
+    });
   }, [poolId, player.id]);
 
   if (!pool) return <div style={{ ...s.page, ...s.center }}><div style={{ color: "#64748b" }}>Loading...</div></div>;
@@ -417,7 +515,6 @@ function PoolLobby({ poolId, player, onPlay, onLeaderboard, onAdmin }) {
   const lockedRounds = playerPicks
     ? [...new Set(playerPicks.filter((p) => p.locked).map((p) => p.round))]
     : [];
-  const currentRound = 0; // R32 for now
   const hasLockedCurrentRound = lockedRounds.includes(currentRound);
   const currentRoundConfig = ROUND_CONFIG[currentRound];
 
@@ -540,7 +637,7 @@ function PoolLobby({ poolId, player, onPlay, onLeaderboard, onAdmin }) {
   );
 }
 
-function EliminatedView({ poolId, player, picks, r32Matchups, onBack }) {
+function EliminatedView({ poolId, player, picks, matchups, onBack }) {
   const [results, setResults] = useState([]);
   const [leaderboard, setLeaderboard] = useState(null);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
@@ -563,7 +660,7 @@ function EliminatedView({ poolId, player, picks, r32Matchups, onBack }) {
       const [region, mIdxStr] = key.split("-");
       const mIdx = parseInt(mIdxStr);
       const winner = resultMap[`${region}-${mIdx}`];
-      const matchup = r32Matchups[region]?.[mIdx];
+      const matchup = matchups?.[region]?.[mIdx];
       const opponent = matchup
         ? (matchup.teamA.name === team ? matchup.teamB.name : matchup.teamA.name)
         : "Unknown";
@@ -711,24 +808,35 @@ function PlayView({ poolId, player, onBack }) {
   const [saving, setSaving] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [saveMessage, setSaveMessage] = useState("");
+  const [currentRound, setCurrentRound] = useState(0);
+  const [allResults, setAllResults] = useState([]);
+  const [matchups, setMatchups] = useState(null);
 
-  const r32Matchups = getR32Matchups();
-  const currentRound = 0; // Only R32 for now
   const config = ROUND_CONFIG[currentRound];
-  const { timeLeft, expired: deadlinePassed } = useCountdown(config.lockTime);
+  const { timeLeft, expired: deadlinePassed } = useCountdown(config?.lockTime || "2099-01-01");
 
   useEffect(() => {
     async function load() {
-      const [allPicks, used] = await Promise.all([
+      const [allPicks, used, roundData, poolResults] = await Promise.all([
         api(`/players/${player.id}/picks`),
         api(`/players/${player.id}/used-teams`),
+        api(`/pools/${poolId}/current-round`),
+        api(`/pools/${poolId}/results`),
       ]);
       setUsedTeams(used);
+      setAllResults(poolResults);
+
+      const round = roundData.currentRound ?? 0;
+      setCurrentRound(round);
+
+      // Build matchups for the current round
+      const m = buildMatchupsForRound(round, poolResults);
+      setMatchups(m);
 
       const locked = [];
       const currentPicks = {};
       for (const p of allPicks) {
-        if (p.round === currentRound) {
+        if (p.round === round) {
           currentPicks[`${p.region}-${p.matchup_idx}`] = p.team;
           if (p.locked) locked.push(p.round);
         }
@@ -738,7 +846,7 @@ function PlayView({ poolId, player, onBack }) {
       setLoading(false);
     }
     load();
-  }, [player.id]);
+  }, [player.id, poolId]);
 
   // Auto-lock when deadline passes
   useEffect(() => {
@@ -890,7 +998,7 @@ function PlayView({ poolId, player, onBack }) {
         poolId={poolId}
         player={player}
         picks={picks}
-        r32Matchups={r32Matchups}
+        matchups={matchups || getR32Matchups()}
         onBack={onBack}
       />
     );
@@ -1008,68 +1116,73 @@ function PlayView({ poolId, player, onBack }) {
         )}
       </div>
 
-      {/* Matchup grid: 4 regions side by side */}
-      <div style={{
-        display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
-        gap: 16, maxWidth: 1200, margin: "0 auto",
-      }}>
-        {REGIONS.map((region) => {
-          const rPicks = regionPickCount(region);
-          const regionDone = config.picksPerRegion != null && rPicks >= config.picksPerRegion;
+      {/* Matchup grid */}
+      {matchups && (
+        <div style={{
+          display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+          gap: 16, maxWidth: 1200, margin: "0 auto",
+        }}>
+          {Object.keys(matchups).map((groupName) => {
+            const groupMatchups = matchups[groupName];
+            const rPicks = regionPickCount(groupName);
+            const regionDone = config.picksPerRegion != null && rPicks >= config.picksPerRegion;
+            const regionColor = s.regionColors[groupName] || "#6366f1";
 
-          return (
-            <div key={region}>
-              <div style={{
-                backgroundColor: s.regionColors[region], color: "#fff",
-                padding: "10px 12px", borderRadius: "8px 8px 0 0",
-                fontWeight: 700, fontSize: 14, textAlign: "center",
-                textTransform: "uppercase", letterSpacing: 1,
-                display: "flex", justifyContent: "space-between", alignItems: "center",
-              }}>
-                <span>{region}</span>
-                {config.picksPerRegion != null && (
-                  <span style={{
-                    fontSize: 11, padding: "2px 8px", borderRadius: 10,
-                    backgroundColor: regionDone ? "rgba(255,255,255,0.3)" : "rgba(0,0,0,0.2)",
-                  }}>
-                    {rPicks}/{config.picksPerRegion}
-                  </span>
-                )}
-              </div>
-              <div style={{ backgroundColor: "#f9fafb", borderRadius: "0 0 8px 8px", padding: 10 }}>
-                {r32Matchups[region].map((matchup, mIdx) => {
-                  const key = `${region}-${mIdx}`;
-                  const selectedTeam = picks[key];
-
-                  return (
-                    <div key={mIdx} style={{
-                      backgroundColor: "#fff", borderRadius: 12, border: "1px solid #e5e7eb",
-                      padding: 12, marginBottom: 10,
+            return (
+              <div key={groupName}>
+                <div style={{
+                  backgroundColor: regionColor, color: "#fff",
+                  padding: "10px 12px", borderRadius: "8px 8px 0 0",
+                  fontWeight: 700, fontSize: 14, textAlign: "center",
+                  textTransform: "uppercase", letterSpacing: 1,
+                  display: "flex", justifyContent: "space-between", alignItems: "center",
+                }}>
+                  <span>{groupName}</span>
+                  {config.picksPerRegion != null && (
+                    <span style={{
+                      fontSize: 11, padding: "2px 8px", borderRadius: 10,
+                      backgroundColor: regionDone ? "rgba(255,255,255,0.3)" : "rgba(0,0,0,0.2)",
                     }}>
-                      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                        {[matchup.teamA, matchup.teamB].map((team) => {
-                          const isUsed = usedTeams.includes(team.name);
-                          const isSelected = selectedTeam === team.name;
-                          return (
-                            <TeamButton
-                              key={team.name}
-                              team={team}
-                              selected={isSelected}
-                              used={isUsed}
-                              disabled={(isLocked && !editMode) || isUsed}
-                              onClick={() => handlePick(region, mIdx, team.name)}
-                            />
-                          );
-                        })}
+                      {rPicks}/{config.picksPerRegion}
+                    </span>
+                  )}
+                </div>
+                <div style={{ backgroundColor: "#f9fafb", borderRadius: "0 0 8px 8px", padding: 10 }}>
+                  {groupMatchups.map((matchup, mIdx) => {
+                    const key = `${groupName}-${mIdx}`;
+                    const selectedTeam = picks[key];
+
+                    return (
+                      <div key={mIdx} style={{
+                        backgroundColor: "#fff", borderRadius: 12, border: "1px solid #e5e7eb",
+                        padding: 12, marginBottom: 10,
+                      }}>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                          {[matchup.teamA, matchup.teamB].map((team) => {
+                            const isUsed = usedTeams.includes(team.name);
+                            const isSelected = selectedTeam === team.name;
+                            const isTBD = team.name === "TBD";
+                            return (
+                              <TeamButton
+                                key={team.name + mIdx}
+                                team={team}
+                                selected={isSelected}
+                                used={isUsed}
+                                disabled={(isLocked && !editMode) || isUsed || isTBD}
+                                onClick={() => handlePick(groupName, mIdx, team.name)}
+                              />
+                            );
+                          })}
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* Action buttons */}
       {(!isLocked || editMode) && (
@@ -1204,46 +1317,104 @@ function AdminView({ poolId, onBack }) {
   const [authed, setAuthed] = useState(false);
   const [results, setResults] = useState({});
   const [message, setMessage] = useState("");
-
-  const r32Matchups = getR32Matchups();
+  const [selectedRound, setSelectedRound] = useState(0);
+  const [allResults, setAllResults] = useState([]);
+  const [fetching, setFetching] = useState(false);
 
   useEffect(() => {
     if (authed) {
       api(`/pools/${poolId}/results`).then((data) => {
+        setAllResults(data);
         const map = {};
         for (const r of data) {
           map[`r${r.round}-${r.region}-${r.matchup_idx}`] = r.winner;
         }
         setResults(map);
       });
+      // Auto-detect which round to show
+      api(`/pools/${poolId}/current-round`).then((data) => {
+        if (data.currentRound != null) setSelectedRound(data.currentRound);
+      });
     }
   }, [authed, poolId]);
+
+  const roundMatchups = buildMatchupsForRound(selectedRound, allResults);
 
   function handleResult(round, region, mIdx, winner) {
     setResults((prev) => ({ ...prev, [`r${round}-${region}-${mIdx}`]: winner }));
   }
 
+  async function fetchFromESPN() {
+    setFetching(true);
+    setMessage("");
+    const res = await api(`/pools/${poolId}/auto-results`, {
+      method: "POST",
+      body: { admin_code: adminCode, round: selectedRound },
+    });
+    setFetching(false);
+
+    if (res.error) {
+      setMessage(`ESPN fetch: ${res.error}`);
+      return;
+    }
+
+    if (res.games && res.games.length > 0) {
+      // Try to match ESPN results to our matchups
+      let matched = 0;
+      const newResults = { ...results };
+      for (const game of res.games) {
+        if (!game.winner) continue;
+        // Search matchups for this game
+        for (const [groupName, groupMatchups] of Object.entries(roundMatchups)) {
+          for (let mIdx = 0; mIdx < groupMatchups.length; mIdx++) {
+            const m = groupMatchups[mIdx];
+            const teams = [m.teamA?.name, m.teamB?.name];
+            if (teams.includes(game.home.name) || teams.includes(game.away.name)) {
+              // Found a match
+              if (teams.includes(game.winner)) {
+                newResults[`r${selectedRound}-${groupName}-${mIdx}`] = game.winner;
+                matched++;
+              }
+            }
+          }
+        }
+      }
+      setResults(newResults);
+      setMessage(`ESPN: Found ${res.completed} completed games, matched ${matched} to bracket. ${res.inProgress} games still in progress. Review and save when ready.`);
+    } else {
+      setMessage(`ESPN: ${res.completed || 0} completed games found, ${res.inProgress || 0} in progress.`);
+    }
+  }
+
   async function saveResults() {
+    const prefix = `r${selectedRound}-`;
     const roundResults = Object.entries(results)
-      .filter(([k]) => k.startsWith("r0-"))
+      .filter(([k]) => k.startsWith(prefix))
       .map(([k, winner]) => {
-        const parts = k.replace("r0-", "").split("-");
-        return { region: parts[0], matchup_idx: parseInt(parts[1]), winner };
+        const rest = k.slice(prefix.length);
+        const lastDash = rest.lastIndexOf("-");
+        const region = rest.slice(0, lastDash);
+        const matchup_idx = parseInt(rest.slice(lastDash + 1));
+        return { region, matchup_idx, winner };
       });
 
     const res = await api(`/pools/${poolId}/results`, {
       method: "POST",
-      body: { admin_code: adminCode, round: 0, results: roundResults },
+      body: { admin_code: adminCode, round: selectedRound, results: roundResults },
     });
     if (res.error) { setMessage(res.error); return; }
+
+    // Refresh all results
+    const data = await api(`/pools/${poolId}/results`);
+    setAllResults(data);
     setMessage("Results saved!");
   }
 
   async function gradeRound() {
-    if (!window.confirm("Grade picks and eliminate losers? This cannot be undone!")) return;
+    if (!window.confirm(`Grade ${ROUND_CONFIG[selectedRound]?.name} picks and eliminate losers? This cannot be undone!`)) return;
     const res = await api(`/pools/${poolId}/grade`, {
       method: "POST",
-      body: { admin_code: adminCode, round: 0 },
+      body: { admin_code: adminCode, round: selectedRound },
     });
     if (res.error) { setMessage(res.error); return; }
     setMessage(`Graded! ${res.eliminated.length} eliminated. ${res.remaining} remaining.`);
@@ -1276,31 +1447,59 @@ function AdminView({ poolId, onBack }) {
       <button onClick={onBack} style={s.backBtn}>&#8592; Back</button>
       <div style={{ maxWidth: 900, margin: "0 auto" }}>
         <h2 style={{ color: "#fff", fontSize: 28, margin: "0 0 8px 0" }}>Admin Panel</h2>
-        <p style={{ color: "#64748b", fontSize: 14, margin: "0 0 24px 0" }}>
+        <p style={{ color: "#64748b", fontSize: 14, margin: "0 0 16px 0" }}>
           Enter winners for each matchup, then grade the round.
         </p>
 
-        <h3 style={{ color: "#f97316", fontSize: 18, margin: "0 0 16px 0" }}>Round of 32 Results</h3>
+        {/* Round selector */}
+        <div style={{ display: "flex", gap: 8, marginBottom: 24, flexWrap: "wrap" }}>
+          {ROUND_CONFIG.map((rc, i) => (
+            <button key={i} onClick={() => setSelectedRound(i)} style={{
+              padding: "8px 16px", borderRadius: 20, fontSize: 12, fontWeight: 700, cursor: "pointer",
+              backgroundColor: i === selectedRound ? "rgba(249,115,22,0.2)" : "rgba(255,255,255,0.05)",
+              color: i === selectedRound ? "#f97316" : "#64748b",
+              border: i === selectedRound ? "1px solid #f97316" : "1px solid rgba(255,255,255,0.1)",
+            }}>
+              {rc.name}
+            </button>
+          ))}
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
+          <h3 style={{ color: "#f97316", fontSize: 18, margin: 0 }}>{ROUND_CONFIG[selectedRound]?.name} Results</h3>
+          <button onClick={fetchFromESPN} disabled={fetching} style={{
+            padding: "6px 16px", borderRadius: 8, fontSize: 12, fontWeight: 600,
+            border: "1px solid #6366f1", backgroundColor: "rgba(99,102,241,0.1)",
+            color: "#818cf8", cursor: fetching ? "not-allowed" : "pointer",
+          }}>
+            {fetching ? "Fetching..." : "Auto-fetch from ESPN"}
+          </button>
+        </div>
+
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))", gap: 12 }}>
-          {REGIONS.map((region) =>
-            r32Matchups[region].map((m, mIdx) => {
-              const key = `r0-${region}-${mIdx}`;
+          {Object.entries(roundMatchups).map(([groupName, groupMatchups]) =>
+            groupMatchups.map((m, mIdx) => {
+              const key = `r${selectedRound}-${groupName}-${mIdx}`;
               const selected = results[key];
+              const teamA = m.teamA || { name: "TBD", seed: 0 };
+              const teamB = m.teamB || { name: "TBD", seed: 0 };
               return (
                 <div key={key} style={{ ...s.card, padding: 12 }}>
                   <div style={{ fontSize: 10, color: "#64748b", marginBottom: 6, textTransform: "uppercase", letterSpacing: 1 }}>
-                    {region}
+                    {groupName}
                   </div>
                   <div style={{ display: "flex", gap: 6 }}>
-                    {[m.teamA, m.teamB].map((t) => (
-                      <button key={t.name} onClick={() => handleResult(0, region, mIdx, t.name)} style={{
+                    {[teamA, teamB].map((t) => (
+                      <button key={t.name + mIdx} onClick={() => handleResult(selectedRound, groupName, mIdx, t.name)}
+                        disabled={t.name === "TBD"}
+                        style={{
                         flex: 1, padding: "8px 6px", borderRadius: 6,
                         border: selected === t.name ? "2px solid #22c55e" : "2px solid #334155",
                         backgroundColor: selected === t.name ? "rgba(34,197,94,0.15)" : "transparent",
-                        color: selected === t.name ? "#22c55e" : "#94a3b8",
-                        cursor: "pointer", fontSize: 12, fontWeight: 600,
+                        color: selected === t.name ? "#22c55e" : t.name === "TBD" ? "#475569" : "#94a3b8",
+                        cursor: t.name === "TBD" ? "not-allowed" : "pointer", fontSize: 12, fontWeight: 600,
                       }}>
-                        ({t.seed}) {t.name}
+                        {t.seed ? `(${t.seed}) ` : ""}{t.name}
                       </button>
                     ))}
                   </div>
