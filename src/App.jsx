@@ -674,6 +674,7 @@ function PoolLobby({ poolId, player, onPlay, onLeaderboard, onAdmin, onLiveScore
   const [pool, setPool] = useState(null);
   const [playerPicks, setPlayerPicks] = useState(null);
   const [currentRound, setCurrentRound] = useState(0);
+  const [showRules, setShowRules] = useState(false);
 
   useEffect(() => {
     api(`/pools/${poolId}`).then(setPool);
@@ -817,10 +818,61 @@ function PoolLobby({ poolId, player, onPlay, onLeaderboard, onAdmin, onLiveScore
             }}>Live Scores</button>
           )}
           <button onClick={onLeaderboard} style={s.btnSecondary}>Leaderboard</button>
+          <button onClick={() => setShowRules(true)} style={{
+            ...s.btnSecondary, borderColor: "rgba(255,255,255,0.1)", color: "#94a3b8", fontSize: 14,
+          }}>Rules</button>
           <button onClick={onAdmin} style={{
             ...s.btnSecondary, borderColor: "rgba(255,255,255,0.1)", color: "#64748b", fontSize: 14,
           }}>Admin</button>
         </div>
+
+        {/* Rules modal */}
+        {showRules && (
+          <div style={{
+            position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
+            backgroundColor: "rgba(0,0,0,0.7)", zIndex: 1000,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            padding: 20,
+          }} onClick={() => setShowRules(false)}>
+            <div style={{
+              ...s.card, maxWidth: 440, width: "100%", maxHeight: "80vh",
+              overflowY: "auto", textAlign: "left", WebkitOverflowScrolling: "touch",
+            }} onClick={(e) => e.stopPropagation()}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                <h3 style={{ color: "#f97316", margin: 0, fontSize: 16 }}>How It Works</h3>
+                <button onClick={() => setShowRules(false)} style={{
+                  background: "none", border: "none", color: "#64748b", fontSize: 20, cursor: "pointer", padding: "0 4px",
+                }}>&times;</button>
+              </div>
+              <div style={{ color: "#cbd5e1", fontSize: 13, lineHeight: 1.8 }}>
+                <div style={{ marginBottom: 6 }}><strong style={{ color: "#fff" }}>Round of 32:</strong> Pick 1 team per region (4 picks). All must win or you're eliminated.</div>
+                <div style={{ marginBottom: 6 }}><strong style={{ color: "#fff" }}>Sweet 16:</strong> Pick 2 teams from opposite sides of the bracket. Both must win.</div>
+                <div style={{ marginBottom: 6 }}><strong style={{ color: "#fff" }}>Elite 8:</strong> Pick 1 team. Must win.</div>
+                <div style={{ marginBottom: 6 }}><strong style={{ color: "#fff" }}>Final Four:</strong> Pick 1 team. Must win.</div>
+                <div style={{ marginBottom: 10 }}><strong style={{ color: "#fff" }}>Championship:</strong> Pick 1 team. Hope you haven't used them!</div>
+
+                <div style={{
+                  padding: "8px 12px", backgroundColor: "rgba(239,68,68,0.15)",
+                  borderRadius: 8, color: "#fca5a5", fontSize: 12, marginBottom: 8,
+                }}>
+                  Once you pick a team, you cannot pick them again in any later round. Choose wisely!
+                </div>
+                <div style={{
+                  padding: "8px 12px", backgroundColor: "rgba(99,102,241,0.15)",
+                  borderRadius: 8, color: "#a5b4fc", fontSize: 12, marginBottom: 8,
+                }}>
+                  <strong style={{ color: "#c7d2fe" }}>Tiebreaker:</strong> If multiple players survive the same number of rounds, the player with the highest combined seed total across all picks wins. Picking lower-seeded teams is riskier but gives you the edge in a tiebreak.
+                </div>
+                <div style={{
+                  padding: "8px 12px", backgroundColor: "rgba(251,191,36,0.12)",
+                  borderRadius: 8, color: "#fcd34d", fontSize: 12,
+                }}>
+                  <strong style={{ color: "#fde68a" }}>Deadlines:</strong> Each round has a pick deadline. If you miss it, your picks auto-lock as-is. No exceptions.
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
