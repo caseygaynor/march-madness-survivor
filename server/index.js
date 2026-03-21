@@ -788,8 +788,16 @@ app.get('/api/pools/:id/leaderboard', (req, res) => {
     const picks = db.prepare('SELECT round, region, matchup_idx, team, seed, locked, pick_result FROM picks WHERE player_id = ? AND locked = 1 ORDER BY round').all(p.id);
     const roundsLocked = [...new Set(picks.map(pk => pk.round))].length;
 
-    // Tiebreaker: combined seed of all locked picks (higher = riskier = better)
-    const combinedSeed = picks.reduce((sum, pk) => sum + (pk.seed || 0), 0);
+    // Tiebreaker: combined seed of CORRECT picks only (higher = riskier upsets that hit)
+    const combinedSeed = picks
+      .filter(pk => {
+        if (pk.pick_result === 'correct') return true;
+        if (pk.pick_result === 'incorrect') return false;
+        // Fall back to result map
+        const key = `${pk.round}-${pk.region}-${pk.matchup_idx}`;
+        return resultMap[key] && resultMap[key] === pk.team;
+      })
+      .reduce((sum, pk) => sum + (pk.seed || 0), 0);
 
     // Correct picks count (use pick_result if available, fall back to result map)
     let correctPicks = 0;

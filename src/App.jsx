@@ -501,7 +501,7 @@ function HomeView({ onCreatePool, onJoinPool }) {
               marginTop: 8, padding: "8px 12px", backgroundColor: "rgba(99,102,241,0.15)",
               borderRadius: 8, color: "#a5b4fc", fontSize: 13,
             }}>
-              <strong style={{ color: "#c7d2fe" }}>Tiebreaker:</strong> If multiple players survive the same number of rounds, the player with the highest combined seed total across all picks wins. Picking lower-seeded teams is riskier but gives you the edge in a tiebreak.
+              <strong style={{ color: "#c7d2fe" }}>Tiebreaker:</strong> If multiple players survive the same number of rounds, the player with the highest combined seed total across their correct picks wins. Only picks that hit count toward your tiebreaker score, so picking lower seeds is riskier but pays off big if they win.
             </div>
           </div>
         </div>
@@ -648,7 +648,7 @@ function RulesGate({ onAccept, onBack }) {
               padding: "8px 12px", backgroundColor: "rgba(99,102,241,0.15)",
               borderRadius: 8, color: "#a5b4fc", fontSize: 12, marginBottom: 8,
             }}>
-              <strong style={{ color: "#c7d2fe" }}>Tiebreaker:</strong> If multiple players survive the same number of rounds, the player with the highest combined seed total across all picks wins. Picking lower-seeded teams is riskier but gives you the edge in a tiebreak.
+              <strong style={{ color: "#c7d2fe" }}>Tiebreaker:</strong> If multiple players survive the same number of rounds, the player with the highest combined seed total across their correct picks wins. Only picks that hit count toward your tiebreaker score, so picking lower seeds is riskier but pays off big if they win.
             </div>
 
             <div style={{
@@ -1025,7 +1025,7 @@ function PoolLobby({ poolId, player, onPlay, onLeaderboard, onAdmin, onLiveScore
                   padding: "8px 12px", backgroundColor: "rgba(99,102,241,0.15)",
                   borderRadius: 8, color: "#a5b4fc", fontSize: 12, marginBottom: 8,
                 }}>
-                  <strong style={{ color: "#c7d2fe" }}>Tiebreaker:</strong> If multiple players survive the same number of rounds, the player with the highest combined seed total across all picks wins. Picking lower-seeded teams is riskier but gives you the edge in a tiebreak.
+                  <strong style={{ color: "#c7d2fe" }}>Tiebreaker:</strong> If multiple players survive the same number of rounds, the player with the highest combined seed total across their correct picks wins. Only picks that hit count toward your tiebreaker score, so picking lower seeds is riskier but pays off big if they win.
                 </div>
                 <div style={{
                   padding: "8px 12px", backgroundColor: "rgba(251,191,36,0.12)",
@@ -2701,7 +2701,7 @@ function LeaderboardView({ poolId, player: currentPlayer, onBack }) {
                 background: "rgba(234,179,8,0.15)", border: "1px solid rgba(234,179,8,0.3)",
               }}>
                 <div style={{ color: "#fbbf24", fontSize: 12, textTransform: "uppercase", letterSpacing: 1 }}>
-                  Winner by tiebreak (highest combined seed)
+                  Winner by tiebreak (highest correct pick seed total)
                 </div>
                 <div style={{ color: "#fff", fontSize: 20, fontWeight: 800, marginTop: 2 }}>
                   {winners.join(" & ")}
@@ -2808,7 +2808,7 @@ function LeaderboardView({ poolId, player: currentPlayer, onBack }) {
                         padding: "2px 8px", borderRadius: 6, fontSize: 11,
                         backgroundColor: "rgba(99,102,241,0.15)", color: "#a5b4fc",
                         fontWeight: 600,
-                      }} title="Combined seed (tiebreaker)">
+                      }} title="Tiebreaker: seed total from correct picks">
                         {"\u2191"}{p.combinedSeed}
                       </div>
                     )}
@@ -2875,7 +2875,7 @@ function LeaderboardView({ poolId, player: currentPlayer, onBack }) {
                     )}
                     {p.combinedSeed > 0 && (
                       <div style={{ color: "#64748b", fontSize: 11, marginTop: 6 }}>
-                        Tiebreaker score: {p.combinedSeed} (combined seed)
+                        Tiebreaker score: {p.combinedSeed} (seed total from correct picks)
                       </div>
                     )}
                   </div>
