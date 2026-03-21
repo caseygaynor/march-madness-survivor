@@ -703,13 +703,13 @@ function JoinPoolView({ onBack, onJoined, initialCode }) {
     onJoined(pool.id, data);
   }
 
+  // Countdown to next lock deadline (must be called before any early returns - React hooks rule)
+  const nextDeadline = ROUND_CONFIG[0].lockTime;
+  const { timeLeft: countdown, expired: deadlinePassed } = useCountdown(nextDeadline);
+
   if (!rulesAccepted) {
     return <RulesGate onAccept={() => setRulesAccepted(true)} onBack={onBack} />;
   }
-
-  // Countdown to next lock deadline
-  const nextDeadline = ROUND_CONFIG[0].lockTime;
-  const { timeLeft: countdown, expired: deadlinePassed } = useCountdown(nextDeadline);
 
   return (
     <div style={s.page}>
@@ -2986,8 +2986,21 @@ export default function App() {
   const [liveScoresPicks, setLiveScoresPicks] = useState({});
 
   // Restore session from localStorage on mount (validate it still exists)
+  // Invite links (?pool=CODE) always take priority over saved sessions
   useEffect(() => {
     async function restoreSession() {
+      // Check URL for pool code (invite link) FIRST - this always takes priority
+      const params = new URLSearchParams(window.location.search);
+      const urlCode = params.get("pool");
+      if (urlCode) {
+        setPoolId(urlCode.toUpperCase());
+        setView("join");
+        // Clean the URL so refreshing doesn't re-trigger
+        window.history.replaceState({}, "", window.location.pathname);
+        return;
+      }
+
+      // No invite link, try restoring saved session
       try {
         const saved = localStorage.getItem("mm_survivor_session");
         if (saved) {
@@ -3010,14 +3023,6 @@ export default function App() {
         }
       } catch (e) {
         try { localStorage.removeItem("mm_survivor_session"); } catch (_) {}
-      }
-
-      // Check URL for pool code
-      const params = new URLSearchParams(window.location.search);
-      const code = params.get("pool");
-      if (code) {
-        setPoolId(code.toUpperCase());
-        setView("join");
       }
     }
     restoreSession();
