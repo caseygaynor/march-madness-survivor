@@ -835,7 +835,7 @@ function PoolLobby({ poolId, player, onPlay, onLeaderboard, onAdmin, onLiveScore
             padding: 20,
           }} onClick={() => setShowRules(false)}>
             <div style={{
-              ...s.card, maxWidth: 440, width: "100%", maxHeight: "80vh",
+              ...s.card, backgroundColor: "#1e293b", maxWidth: 440, width: "100%", maxHeight: "80vh",
               overflowY: "auto", textAlign: "left", WebkitOverflowScrolling: "touch",
             }} onClick={(e) => e.stopPropagation()}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
