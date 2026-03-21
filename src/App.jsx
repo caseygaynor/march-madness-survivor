@@ -1927,7 +1927,7 @@ function PlayerBracketView({ poolId, allResults, playerPicksByRound, currentPick
     }
 
     const isPicked = isPickedInRound(team.name, roundIdx) || (roundIdx === currentRound && currentPickTeams.includes(team.name));
-    const isUsed = usedTeams.includes(team.name) && !isPicked;
+    const wasPickedPreviously = !isPicked && allPickedTeams.has(team.name);
     const teamColor = getTeamColor(team.name);
     const hasColor = teamColor !== "#64748b";
 
@@ -1949,28 +1949,45 @@ function PlayerBracketView({ poolId, allResults, playerPicksByRound, currentPick
     let glowStyle = "none";
     let opacityStyle = 1;
     let statusIcon = null;
+    let nameColor = "#e2e8f0";
+    let nameBold = false;
 
     if (isPicked && teamWon) {
-      // Picked and won!
+      // Picked and won
       borderStyle = `1.5px solid #22c55e`;
       bgStyle = "rgba(34,197,94,0.1)";
       glowStyle = "0 0 8px rgba(34,197,94,0.3)";
       statusIcon = <span style={{ color: "#22c55e", fontSize: 11, fontWeight: 700 }}>&#10003;</span>;
+      nameBold = true;
     } else if (isPicked && teamLost) {
       // Picked and lost
       borderStyle = `1.5px solid rgba(239,68,68,0.4)`;
       bgStyle = "rgba(239,68,68,0.08)";
       statusIcon = <span style={{ color: "#ef4444", fontSize: 11, fontWeight: 700 }}>&#10005;</span>;
+      nameBold = true;
     } else if (isPicked) {
-      // Picked, game pending
+      // Picked, game pending -- use school color
       borderStyle = hasColor ? `1.5px solid ${teamColor}` : "1.5px solid #f97316";
       bgStyle = hasColor ? hexToRgba(teamColor, 0.1) : "rgba(249,115,22,0.1)";
       glowStyle = hasColor ? `0 0 8px ${hexToRgba(teamColor, 0.25)}` : "0 0 8px rgba(249,115,22,0.2)";
-      statusIcon = <span style={{ fontSize: 9, color: "#f97316" }}>{"\u{1F3C0}"}</span>;
-    } else if (isUsed) {
-      opacityStyle = 0.35;
+      statusIcon = <span style={{
+        display: "inline-flex", alignItems: "center", justifyContent: "center",
+        width: 16, height: 16, borderRadius: "50%",
+        backgroundColor: hasColor ? teamColor : "#f97316", fontSize: 8, color: "#fff", fontWeight: 700,
+      }}>{"\u{1F3C0}"}</span>;
+      nameBold = true;
+    } else if (wasPickedPreviously && !teamLost) {
+      // Team is still alive but already used in a prior round
+      borderStyle = hasColor ? `1.5px dashed ${hexToRgba(teamColor, 0.4)}` : "1.5px dashed rgba(249,115,22,0.3)";
+      bgStyle = hasColor ? hexToRgba(teamColor, 0.04) : "rgba(249,115,22,0.04)";
+      nameColor = "#94a3b8";
+      statusIcon = <span style={{
+        fontSize: 8, color: "#94a3b8", fontWeight: 700, padding: "1px 5px",
+        borderRadius: 6, backgroundColor: "rgba(255,255,255,0.06)", letterSpacing: 0.3,
+        whiteSpace: "nowrap",
+      }}>USED R{Object.entries(playerPicksByRound).find(([, picks]) => picks.some((p) => p.team === team.name))?.[0] * 1 + 1 || "?"}</span>;
     } else if (teamLost) {
-      opacityStyle = 0.3;
+      opacityStyle = 0.25;
       borderStyle = "1px solid rgba(255,255,255,0.03)";
     }
 
@@ -1982,7 +1999,7 @@ function PlayerBracketView({ poolId, allResults, playerPicksByRound, currentPick
         transition: "all 0.2s ease",
       }}>
         <JerseyBadge seed={team.seed} teamName={team.name} />
-        <span style={{ color: "#e2e8f0", fontSize: 11, fontWeight: isPicked ? 700 : 500, flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+        <span style={{ color: nameColor, fontSize: 11, fontWeight: nameBold ? 700 : 500, flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
           {team.name}
         </span>
         {statusIcon}
@@ -2048,10 +2065,10 @@ function PlayerBracketView({ poolId, allResults, playerPicksByRound, currentPick
   // Legend
   function BracketLegend() {
     return (
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 12, justifyContent: "center", marginBottom: 16 }}>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 10, justifyContent: "center", marginBottom: 16 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-          <span style={{ width: 10, height: 10, borderRadius: 3, backgroundColor: "rgba(249,115,22,0.3)", border: "1.5px solid #f97316" }} />
-          <span style={{ color: "#64748b", fontSize: 10 }}>Your pick</span>
+          <span style={{ width: 10, height: 10, borderRadius: 3, background: "linear-gradient(135deg, #2563eb, #7c3aed)", border: "1.5px solid #2563eb" }} />
+          <span style={{ color: "#64748b", fontSize: 10 }}>Picked</span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
           <span style={{ width: 10, height: 10, borderRadius: 3, backgroundColor: "rgba(34,197,94,0.3)", border: "1.5px solid #22c55e" }} />
@@ -2062,8 +2079,12 @@ function PlayerBracketView({ poolId, allResults, playerPicksByRound, currentPick
           <span style={{ color: "#64748b", fontSize: 10 }}>Lost</span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-          <span style={{ width: 10, height: 10, borderRadius: 3, backgroundColor: "rgba(255,255,255,0.03)", opacity: 0.35 }} />
-          <span style={{ color: "#64748b", fontSize: 10 }}>Used</span>
+          <span style={{ width: 10, height: 10, borderRadius: 3, border: "1.5px dashed #475569" }} />
+          <span style={{ color: "#64748b", fontSize: 10 }}>Used prior</span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+          <span style={{ width: 10, height: 10, borderRadius: 3, backgroundColor: "rgba(255,255,255,0.03)", opacity: 0.25 }} />
+          <span style={{ color: "#64748b", fontSize: 10 }}>Eliminated</span>
         </div>
       </div>
     );
@@ -2174,6 +2195,14 @@ function PlayerBracketView({ poolId, allResults, playerPicksByRound, currentPick
       </div>
 
       <FinalRounds />
+
+      {/* Edit note */}
+      <div style={{
+        textAlign: "center", marginTop: 20, paddingBottom: 20,
+        color: "#475569", fontSize: 11,
+      }}>
+        To edit your picks, switch to the <span style={{ color: "#f97316", fontWeight: 600 }}>Make Picks</span> tab above
+      </div>
     </div>
   );
 }
