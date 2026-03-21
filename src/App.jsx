@@ -75,16 +75,16 @@ const FIRST_ROUND = {
   East: [
     { seed1: 1, team1: "Duke", score1: 71, seed2: 16, team2: "Siena", score2: 65, winner: "Duke", done: true },
     { seed1: 8, team1: "Ohio State", score1: 64, seed2: 9, team2: "TCU", score2: 66, winner: "TCU", done: true },
-    { seed1: 5, team1: "St. John's", score1: null, seed2: 12, team2: "Northern Iowa", score2: null, winner: "St. John's", done: false },
+    { seed1: 5, team1: "St. John's", score1: 79, seed2: 12, team2: "Northern Iowa", score2: 53, winner: "St. John's", done: true },
     { seed1: 4, team1: "Kansas", score1: null, seed2: 13, team2: "Cal Baptist", score2: null, winner: "Kansas", done: false },
     { seed1: 6, team1: "Louisville", score1: 83, seed2: 11, team2: "South Florida", score2: 79, winner: "Louisville", done: true },
     { seed1: 3, team1: "Michigan State", score1: 92, seed2: 14, team2: "North Dakota State", score2: 67, winner: "Michigan State", done: true },
-    { seed1: 7, team1: "UCLA", score1: null, seed2: 10, team2: "UCF", score2: null, winner: "UCLA", done: false },
+    { seed1: 7, team1: "UCLA", score1: 72, seed2: 10, team2: "UCF", score2: 69, winner: "UCLA", done: true },
     { seed1: 2, team1: "UConn", score1: null, seed2: 15, team2: "Furman", score2: null, winner: "UConn", done: false },
   ],
   South: [
     { seed1: 1, team1: "Florida", score1: null, seed2: 16, team2: "Prairie View A&M", score2: null, winner: "Florida", done: false },
-    { seed1: 8, team1: "Clemson", score1: null, seed2: 9, team2: "Iowa", score2: null, winner: "Clemson", done: false },
+    { seed1: 8, team1: "Clemson", score1: 61, seed2: 9, team2: "Iowa", score2: 67, winner: "Iowa", done: true },
     { seed1: 5, team1: "Vanderbilt", score1: 78, seed2: 12, team2: "McNeese State", score2: 68, winner: "Vanderbilt", done: true },
     { seed1: 4, team1: "Nebraska", score1: 76, seed2: 13, team2: "Troy", score2: 47, winner: "Nebraska", done: true },
     { seed1: 6, team1: "North Carolina", score1: 78, seed2: 11, team2: "VCU", score2: 82, winner: "VCU", done: true },
@@ -100,7 +100,7 @@ const FIRST_ROUND = {
     { seed1: 6, team1: "BYU", score1: 71, seed2: 11, team2: "Texas", score2: 79, winner: "Texas", done: true },
     { seed1: 3, team1: "Gonzaga", score1: 73, seed2: 14, team2: "Kennesaw State", score2: 64, winner: "Gonzaga", done: true },
     { seed1: 7, team1: "Miami (FL)", score1: null, seed2: 10, team2: "Missouri", score2: null, winner: "Miami (FL)", done: false },
-    { seed1: 2, team1: "Purdue", score1: null, seed2: 15, team2: "Queens", score2: null, winner: "Purdue", done: false },
+    { seed1: 2, team1: "Purdue", score1: 104, seed2: 15, team2: "Queens", score2: 71, winner: "Purdue", done: true },
   ],
   Midwest: [
     { seed1: 1, team1: "Michigan", score1: 101, seed2: 16, team2: "Howard", score2: 80, winner: "Michigan", done: true },
