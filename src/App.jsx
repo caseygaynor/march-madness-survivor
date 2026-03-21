@@ -2014,28 +2014,42 @@ export default function App() {
   const [liveScoresRound, setLiveScoresRound] = useState(0);
   const [liveScoresPicks, setLiveScoresPicks] = useState({});
 
-  // Restore session from localStorage on mount
+  // Restore session from localStorage on mount (validate it still exists)
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem("mm_survivor_session");
-      if (saved) {
-        const session = JSON.parse(saved);
-        if (session.poolId && session.player) {
-          setPoolId(session.poolId);
-          setPlayer(session.player);
-          setView("lobby");
-          return; // skip URL check if we have a session
+    async function restoreSession() {
+      try {
+        const saved = localStorage.getItem("mm_survivor_session");
+        if (saved) {
+          const session = JSON.parse(saved);
+          if (session.poolId && session.player) {
+            // Validate the pool still exists before restoring
+            const pool = await api(`/pools/${session.poolId}`);
+            if (!pool.error) {
+              const serverPlayer = pool.players?.find(p => p.id === session.player.id);
+              if (serverPlayer) {
+                setPoolId(session.poolId);
+                setPlayer({ ...session.player, alive: serverPlayer.alive });
+                setView("lobby");
+                return;
+              }
+            }
+            // Pool or player gone, clear stale session
+            localStorage.removeItem("mm_survivor_session");
+          }
         }
+      } catch (e) {
+        try { localStorage.removeItem("mm_survivor_session"); } catch (_) {}
       }
-    } catch (e) { /* ignore parse errors */ }
 
-    // Check URL for pool code
-    const params = new URLSearchParams(window.location.search);
-    const code = params.get("pool");
-    if (code) {
-      setPoolId(code.toUpperCase());
-      setView("join");
+      // Check URL for pool code
+      const params = new URLSearchParams(window.location.search);
+      const code = params.get("pool");
+      if (code) {
+        setPoolId(code.toUpperCase());
+        setView("join");
+      }
     }
+    restoreSession();
   }, []);
 
   // Save session to localStorage when player joins
