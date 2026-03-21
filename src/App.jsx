@@ -1511,10 +1511,8 @@ function PlayView({ poolId, player, onBack, onLiveScores }) {
     setEditMode(true);
   }
 
-  // When editing, free up teams that were locked in THIS round so they can be re-selected
-  const effectiveUsedTeams = editMode
-    ? usedTeams.filter((t) => !currentRoundLockedTeams.includes(t))
-    : usedTeams;
+  // Only show teams as "used" if they were locked in a PREVIOUS round, never the current one
+  const effectiveUsedTeams = usedTeams.filter((t) => !currentRoundLockedTeams.includes(t));
 
   const totalPicked = Object.values(picks).filter(Boolean).length;
   const allRegionsFilled = config.picksPerRegion != null
