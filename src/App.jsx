@@ -1290,6 +1290,7 @@ function FutureRoundPreview({ roundIdx, onBack }) {
 function PlayView({ poolId, player, onBack, onLiveScores }) {
   const [picks, setPicks] = useState({}); // { "East-0": "Duke", ... }
   const [usedTeams, setUsedTeams] = useState([]);
+  const [currentRoundLockedTeams, setCurrentRoundLockedTeams] = useState([]);
   const [lockedRounds, setLockedRounds] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -1323,13 +1324,18 @@ function PlayView({ poolId, player, onBack, onLiveScores }) {
 
       const locked = [];
       const currentPicks = {};
+      const roundLockedTeams = [];
       for (const p of allPicks) {
         if (p.round === round) {
           currentPicks[`${p.region}-${p.matchup_idx}`] = p.team;
-          if (p.locked) locked.push(p.round);
+          if (p.locked) {
+            locked.push(p.round);
+            roundLockedTeams.push(p.team);
+          }
         }
       }
       setLockedRounds([...new Set(locked)]);
+      setCurrentRoundLockedTeams(roundLockedTeams);
       setPicks(currentPicks);
       setLoading(false);
     }
@@ -1487,6 +1493,11 @@ function PlayView({ poolId, player, onBack, onLiveScores }) {
     setEditMode(true);
   }
 
+  // When editing, free up teams that were locked in THIS round so they can be re-selected
+  const effectiveUsedTeams = editMode
+    ? usedTeams.filter((t) => !currentRoundLockedTeams.includes(t))
+    : usedTeams;
+
   const totalPicked = Object.values(picks).filter(Boolean).length;
   const allRegionsFilled = config.picksPerRegion != null
     ? REGIONS.every((r) => regionPickCount(r) >= config.picksPerRegion)
@@ -1641,10 +1652,10 @@ function PlayView({ poolId, player, onBack, onLiveScores }) {
           </div>
         )}
 
-        {usedTeams.length > 0 && (
+        {effectiveUsedTeams.length > 0 && (
           <div style={{ marginTop: 12 }}>
             <span style={{ color: "#64748b", fontSize: 12 }}>Used picks: </span>
-            {usedTeams.map((t) => (
+            {effectiveUsedTeams.map((t) => (
               <span key={t} style={{
                 display: "inline-block", padding: "2px 8px", borderRadius: 4,
                 backgroundColor: "rgba(239,68,68,0.1)", color: "#fca5a5", fontSize: 11, margin: "2px 3px",
@@ -1697,7 +1708,7 @@ function PlayView({ poolId, player, onBack, onLiveScores }) {
                       }}>
                         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                           {[matchup.teamA, matchup.teamB].map((team) => {
-                            const isUsed = usedTeams.includes(team.name);
+                            const isUsed = effectiveUsedTeams.includes(team.name);
                             const isSelected = selectedTeam === team.name;
                             const isTBD = team.name === "TBD";
                             return (
