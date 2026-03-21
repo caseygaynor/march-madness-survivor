@@ -342,7 +342,7 @@ app.get('/api/players/:playerId/picks', (req, res) => {
 
 // Submit picks for a round (allowed until deadline)
 app.post('/api/players/:playerId/picks', (req, res) => {
-  const { round, picks } = req.body;
+  const { round, picks, editing } = req.body;
   const playerId = parseInt(req.params.playerId);
 
   // DEADLINE CHECK: reject if round is locked
@@ -354,18 +354,22 @@ app.post('/api/players/:playerId/picks', (req, res) => {
   if (!player) return res.status(404).json({ error: 'Player not found' });
   if (!player.alive) return res.status(400).json({ error: 'Player is eliminated' });
 
-  // Check no manually locked picks for this round
+  // If editing, allow overwriting locked picks (deadline hasn't passed, checked above)
+  // If not editing, reject if picks are already locked
   const existingLocked = db.prepare('SELECT id FROM picks WHERE player_id = ? AND round = ? AND locked = 1').get(playerId, round);
-  if (existingLocked) return res.status(400).json({ error: 'Picks already locked for this round' });
+  if (existingLocked && !editing) {
+    return res.status(400).json({ error: 'Picks already locked for this round' });
+  }
 
   const upsert = db.prepare(`
     INSERT INTO picks (player_id, round, region, matchup_idx, team, locked)
     VALUES (?, ?, ?, ?, ?, 0)
-    ON CONFLICT(player_id, round, region, matchup_idx) DO UPDATE SET team = excluded.team
+    ON CONFLICT(player_id, round, region, matchup_idx) DO UPDATE SET team = excluded.team, locked = 0
   `);
 
   const tx = db.transaction(() => {
-    db.prepare('DELETE FROM picks WHERE player_id = ? AND round = ? AND locked = 0').run(playerId, round);
+    // Clear ALL existing picks for this round (locked or not) when editing
+    db.prepare('DELETE FROM picks WHERE player_id = ? AND round = ?').run(playerId, round);
     for (const p of picks) {
       upsert.run(playerId, round, p.region, p.matchup_idx, p.team);
     }

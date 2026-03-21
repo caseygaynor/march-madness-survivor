@@ -815,6 +815,139 @@ function EliminatedView({ poolId, player, picks, matchups, onBack }) {
   );
 }
 
+// ============================================================
+// FUN TBD PREVIEWS FOR FUTURE ROUNDS
+// ============================================================
+
+const FUTURE_ROUND_PREVIEWS = [
+  null, // R32 - never shown as preview
+  { // Sweet 16
+    emoji: "\u{1F52E}",
+    title: "Sweet 16",
+    subtitle: "The field narrows...",
+    message: "8 matchups. 2 picks. Opposite sides of the bracket.",
+    bgGradient: "linear-gradient(135deg, rgba(99,102,241,0.15), rgba(168,85,247,0.15))",
+    borderColor: "rgba(139,92,246,0.3)",
+    accentColor: "#a78bfa",
+    slots: 8,
+    slotEmojis: ["\u{1F47B}", "\u{1F47B}", "\u{1F47B}", "\u{1F47B}", "\u{1F47B}", "\u{1F47B}", "\u{1F47B}", "\u{1F47B}"],
+    flavor: "Who survives the first weekend? Place your bets... well, picks.",
+  },
+  { // Elite 8
+    emoji: "\u{1F525}",
+    title: "Elite 8",
+    subtitle: "Only the strong remain",
+    message: "4 matchups. 1 pick. Choose wisely, teams are running out.",
+    bgGradient: "linear-gradient(135deg, rgba(239,68,68,0.15), rgba(249,115,22,0.15))",
+    borderColor: "rgba(239,68,68,0.3)",
+    accentColor: "#f87171",
+    slots: 4,
+    slotEmojis: ["\u{1F94A}", "\u{1F94A}", "\u{1F94A}", "\u{1F94A}"],
+    flavor: "Four region finals. Four chances to get it wrong. No pressure.",
+  },
+  { // Final Four
+    emoji: "\u{1F3C6}",
+    title: "Final Four",
+    subtitle: "The biggest stage in college basketball",
+    message: "2 matchups. 1 pick. Legends are made here.",
+    bgGradient: "linear-gradient(135deg, rgba(234,179,8,0.15), rgba(249,115,22,0.15))",
+    borderColor: "rgba(234,179,8,0.3)",
+    accentColor: "#fbbf24",
+    slots: 2,
+    slotEmojis: ["\u{1F451}", "\u{1F451}"],
+    flavor: "East/West vs South/Midwest. Saturday night lights. One step from glory.",
+  },
+  { // Championship
+    emoji: "\u{1F48E}",
+    title: "Championship",
+    subtitle: "One game. One pick. Everything.",
+    message: "If you still have that team available... you're a genius. Or lucky.",
+    bgGradient: "linear-gradient(135deg, rgba(234,179,8,0.2), rgba(239,68,68,0.2))",
+    borderColor: "rgba(234,179,8,0.4)",
+    accentColor: "#fbbf24",
+    slots: 1,
+    slotEmojis: ["\u{1F3C6}"],
+    flavor: "Monday night. Two teams left. One crown. Did you save the right team?",
+  },
+];
+
+function FutureRoundPreview({ roundIdx, onBack }) {
+  const preview = FUTURE_ROUND_PREVIEWS[roundIdx];
+  if (!preview) return null;
+
+  const [shimmer, setShimmer] = useState(0);
+  useEffect(() => {
+    const iv = setInterval(() => setShimmer((p) => (p + 1) % preview.slots), 1200);
+    return () => clearInterval(iv);
+  }, [preview.slots]);
+
+  return (
+    <div style={{ textAlign: "center", maxWidth: 500, margin: "0 auto" }}>
+      <div style={{
+        ...s.card, padding: 32,
+        background: preview.bgGradient,
+        border: `1px solid ${preview.borderColor}`,
+        marginBottom: 20,
+      }}>
+        <div style={{ fontSize: 64, marginBottom: 12 }}>{preview.emoji}</div>
+        <h2 style={{ color: "#fff", fontSize: 32, margin: "0 0 4px 0" }}>{preview.title}</h2>
+        <p style={{ color: preview.accentColor, fontSize: 16, fontWeight: 600, margin: "0 0 16px 0" }}>
+          {preview.subtitle}
+        </p>
+
+        {/* Animated TBD slots */}
+        <div style={{ display: "flex", justifyContent: "center", gap: 12, marginBottom: 20, flexWrap: "wrap" }}>
+          {Array.from({ length: preview.slots }).map((_, i) => (
+            <div key={i} style={{
+              width: 60, height: 60, borderRadius: 12,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              backgroundColor: shimmer === i ? "rgba(255,255,255,0.1)" : "rgba(255,255,255,0.03)",
+              border: shimmer === i ? `2px solid ${preview.accentColor}` : "2px solid rgba(255,255,255,0.08)",
+              transition: "all 0.4s ease",
+              transform: shimmer === i ? "scale(1.1)" : "scale(1)",
+            }}>
+              <span style={{
+                fontSize: 24,
+                opacity: shimmer === i ? 1 : 0.4,
+                transition: "opacity 0.4s ease",
+              }}>
+                {preview.slotEmojis[i]}
+              </span>
+            </div>
+          ))}
+        </div>
+
+        <p style={{ color: "#94a3b8", fontSize: 14, lineHeight: 1.6, margin: "0 0 8px 0" }}>
+          {preview.message}
+        </p>
+        <p style={{ color: "#64748b", fontSize: 13, fontStyle: "italic", margin: 0 }}>
+          {preview.flavor}
+        </p>
+      </div>
+
+      <div style={{
+        ...s.card, padding: "16px 20px",
+        backgroundColor: "rgba(255,255,255,0.03)",
+        border: "1px solid rgba(255,255,255,0.06)",
+      }}>
+        <div style={{ color: "#64748b", fontSize: 12, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>
+          Matchups set after
+        </div>
+        <div style={{ color: "#fff", fontSize: 15, fontWeight: 600 }}>
+          {roundIdx > 0 ? ROUND_CONFIG[roundIdx - 1].name : "First Round"} results are graded
+        </div>
+        <div style={{ color: "#94a3b8", fontSize: 12, marginTop: 4 }}>
+          Deadline: {formatDeadline(ROUND_CONFIG[roundIdx].lockTime)}
+        </div>
+      </div>
+
+      <button onClick={onBack} style={{ ...s.btnSecondary, marginTop: 20, padding: "10px 24px", fontSize: 14 }}>
+        Back to Current Round
+      </button>
+    </div>
+  );
+}
+
 function PlayView({ poolId, player, onBack, onLiveScores }) {
   const [picks, setPicks] = useState({}); // { "East-0": "Duke", ... }
   const [usedTeams, setUsedTeams] = useState([]);
@@ -823,6 +956,7 @@ function PlayView({ poolId, player, onBack, onLiveScores }) {
   const [saving, setSaving] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [saveMessage, setSaveMessage] = useState("");
+  const [previewRound, setPreviewRound] = useState(null); // null = show current round, number = preview future round
   const [currentRound, setCurrentRound] = useState(0);
   const [allResults, setAllResults] = useState([]);
   const [matchups, setMatchups] = useState(null);
@@ -956,7 +1090,7 @@ function PlayView({ poolId, player, onBack, onLiveScores }) {
     });
   }
 
-  async function savePicks() {
+  async function savePicks({ asEdit } = {}) {
     setSaving(true);
     const pickArray = Object.entries(picks)
       .filter(([, v]) => v)
@@ -967,7 +1101,7 @@ function PlayView({ poolId, player, onBack, onLiveScores }) {
 
     const result = await api(`/players/${player.id}/picks`, {
       method: "POST",
-      body: { round: currentRound, picks: pickArray },
+      body: { round: currentRound, picks: pickArray, editing: asEdit || editMode },
     });
     setSaving(false);
 
@@ -981,23 +1115,30 @@ function PlayView({ poolId, player, onBack, onLiveScores }) {
   }
 
   async function lockPicks() {
-    if (!window.confirm("Lock your picks? You can still edit them until the deadline.")) return;
-    const saveResult = await savePicks();
-    if (saveResult?.error) return;
+    // If this is a re-lock after editing, skip the confirmation
+    if (!editMode && !window.confirm("Lock your picks? You can still edit them until the deadline.")) return;
+
+    setSaving(true);
+    const saveResult = await savePicks({ asEdit: editMode });
+    if (saveResult?.error) {
+      setSaving(false);
+      return;
+    }
+
     await api(`/players/${player.id}/lock`, { method: "POST", body: { round: currentRound } });
-    setLockedRounds((prev) => [...prev, currentRound]);
+    setLockedRounds((prev) => [...new Set([...prev, currentRound])]);
     setEditMode(false);
+    setSaving(false);
+
+    setSaveMessage(editMode ? "Picks updated and locked!" : "Picks locked!");
+    setTimeout(() => setSaveMessage(""), 3000);
 
     const used = await api(`/players/${player.id}/used-teams`);
     setUsedTeams(used);
   }
 
-  async function unlockForEditing() {
-    // Unlock picks on the server so they can be re-submitted
-    // The server will re-lock them when the player saves again
+  function unlockForEditing() {
     setEditMode(true);
-    // Remove from lockedRounds locally so UI opens up
-    setLockedRounds((prev) => prev.filter((r) => r !== currentRound));
   }
 
   const totalPicked = Object.values(picks).filter(Boolean).length;
@@ -1025,19 +1166,47 @@ function PlayView({ poolId, player, onBack, onLiveScores }) {
 
       {/* Round header */}
       <div style={{ textAlign: "center", marginBottom: 20 }}>
-        <div style={{ display: "flex", justifyContent: "center", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
-          {ROUND_CONFIG.map((rc, i) => (
-            <div key={i} style={{
-              padding: "6px 12px", borderRadius: 20, fontSize: 11, fontWeight: 700,
-              backgroundColor: i === currentRound ? "rgba(249,115,22,0.2)" : i < currentRound ? "rgba(34,197,94,0.15)" : "rgba(255,255,255,0.05)",
-              color: i === currentRound ? "#f97316" : i < currentRound ? "#22c55e" : "#64748b",
-              border: i === currentRound ? "1px solid #f97316" : "1px solid transparent",
-            }}>
-              {rc.name}
-            </div>
-          ))}
+        <div style={{ display: "flex", justifyContent: "center", gap: 6, marginBottom: 16, flexWrap: "wrap" }}>
+          {ROUND_CONFIG.map((rc, i) => {
+            const isActive = previewRound === null ? i === currentRound : i === previewRound;
+            const isPast = i < currentRound;
+            const isFuture = i > currentRound;
+            return (
+              <button key={i} onClick={() => {
+                if (i === currentRound) {
+                  setPreviewRound(null); // go back to current round
+                } else if (isFuture) {
+                  setPreviewRound(i);
+                }
+                // past rounds: could show results, for now no-op
+              }} style={{
+                padding: "6px 12px", borderRadius: 20, fontSize: 11, fontWeight: 700,
+                backgroundColor: isActive ? "rgba(249,115,22,0.2)" : isPast ? "rgba(34,197,94,0.15)" : "rgba(255,255,255,0.05)",
+                color: isActive ? "#f97316" : isPast ? "#22c55e" : "#94a3b8",
+                border: isActive ? "1px solid #f97316" : "1px solid transparent",
+                cursor: isFuture || i === currentRound ? "pointer" : "default",
+                transition: "all 0.15s ease",
+                background: "none",
+                ...(isActive ? { backgroundColor: "rgba(249,115,22,0.2)" } : isPast ? { backgroundColor: "rgba(34,197,94,0.15)" } : { backgroundColor: "rgba(255,255,255,0.05)" }),
+              }}>
+                {rc.name}
+              </button>
+            );
+          })}
         </div>
 
+        {/* Future round preview */}
+        {previewRound !== null && previewRound > currentRound && (
+          <FutureRoundPreview
+            roundIdx={previewRound}
+            onBack={() => setPreviewRound(null)}
+          />
+        )}
+      </div>
+
+      {previewRound !== null && previewRound > currentRound ? null : (
+      <>
+      <div style={{ textAlign: "center", marginBottom: 20 }}>
         <h2 style={{ color: "#fff", fontSize: 28, margin: 0 }}>{config.name}</h2>
         <p style={{ color: "#94a3b8", fontSize: 14, marginTop: 4 }}>{config.description}</p>
 
@@ -1240,6 +1409,8 @@ function PlayView({ poolId, player, onBack, onLiveScores }) {
             </p>
           )}
         </div>
+      )}
+      </>
       )}
     </div>
   );
