@@ -13,7 +13,9 @@ app.use(cors());
 app.use(express.json());
 
 // --- Database Setup ---
-const dbPath = process.env.DB_PATH || join(__dirname, '..', 'data', 'survivor.db');
+// In production (Railway), use the mounted volume at /data for persistence across deploys.
+// Locally, fall back to ./data/survivor.db
+const dbPath = process.env.DB_PATH || (process.env.NODE_ENV === 'production' ? '/data/survivor.db' : join(__dirname, '..', 'data', 'survivor.db'));
 mkdirSync(dirname(dbPath), { recursive: true });
 
 const db = new Database(dbPath);
@@ -32,6 +34,7 @@ db.exec(`
     pool_id TEXT NOT NULL REFERENCES pools(id),
     name TEXT NOT NULL,
     alive INTEGER DEFAULT 1,
+    eliminated_round INTEGER DEFAULT -1,
     created_at TEXT DEFAULT (datetime('now')),
     UNIQUE(pool_id, name)
   );
@@ -43,6 +46,7 @@ db.exec(`
     region TEXT NOT NULL,
     matchup_idx INTEGER NOT NULL,
     team TEXT NOT NULL,
+    seed INTEGER DEFAULT 0,
     locked INTEGER DEFAULT 0,
     UNIQUE(player_id, round, region, matchup_idx)
   );
@@ -57,6 +61,10 @@ db.exec(`
     UNIQUE(pool_id, round, region, matchup_idx)
   );
 `);
+
+// Migration: add seed column if missing (for existing DBs)
+try { db.exec('ALTER TABLE picks ADD COLUMN seed INTEGER DEFAULT 0'); } catch(e) { /* already exists */ }
+try { db.exec('ALTER TABLE players ADD COLUMN eliminated_round INTEGER DEFAULT -1'); } catch(e) { /* already exists */ }
 
 // ============================================================
 // TOURNAMENT SCHEDULE - 2026 NCAA Men's Tournament
@@ -362,16 +370,16 @@ app.post('/api/players/:playerId/picks', (req, res) => {
   }
 
   const upsert = db.prepare(`
-    INSERT INTO picks (player_id, round, region, matchup_idx, team, locked)
-    VALUES (?, ?, ?, ?, ?, 0)
-    ON CONFLICT(player_id, round, region, matchup_idx) DO UPDATE SET team = excluded.team, locked = 0
+    INSERT INTO picks (player_id, round, region, matchup_idx, team, seed, locked)
+    VALUES (?, ?, ?, ?, ?, ?, 0)
+    ON CONFLICT(player_id, round, region, matchup_idx) DO UPDATE SET team = excluded.team, seed = excluded.seed, locked = 0
   `);
 
   const tx = db.transaction(() => {
     // Clear ALL existing picks for this round (locked or not) when editing
     db.prepare('DELETE FROM picks WHERE player_id = ? AND round = ?').run(playerId, round);
     for (const p of picks) {
-      upsert.run(playerId, round, p.region, p.matchup_idx, p.team);
+      upsert.run(playerId, round, p.region, p.matchup_idx, p.team, p.seed || 0);
     }
   });
   tx();
@@ -455,7 +463,7 @@ app.post('/api/pools/:id/grade', (req, res) => {
     const picks = db.prepare('SELECT region, matchup_idx, team FROM picks WHERE player_id = ? AND round = ? AND locked = 1').all(player.id, round);
 
     if (picks.length === 0) {
-      db.prepare('UPDATE players SET alive = 0 WHERE id = ?').run(player.id);
+      db.prepare('UPDATE players SET alive = 0, eliminated_round = ? WHERE id = ?').run(round, player.id);
       eliminated.push(player.name);
       continue;
     }
@@ -463,14 +471,22 @@ app.post('/api/pools/:id/grade', (req, res) => {
     for (const pick of picks) {
       const key = `${pick.region}-${pick.matchup_idx}`;
       if (resultMap[key] && resultMap[key] !== pick.team) {
-        db.prepare('UPDATE players SET alive = 0 WHERE id = ?').run(player.id);
+        db.prepare('UPDATE players SET alive = 0, eliminated_round = ? WHERE id = ?').run(round, player.id);
         eliminated.push(player.name);
         break;
       }
     }
   }
 
-  res.json({ eliminated, remaining: alivePlayers.length - eliminated.length });
+  const remaining = alivePlayers.length - eliminated.length;
+
+  // Check for all-eliminated scenario
+  let allEliminated = false;
+  if (remaining === 0 && alivePlayers.length > 0) {
+    allEliminated = true;
+  }
+
+  res.json({ eliminated, remaining, allEliminated, round });
 });
 
 // Get results for a pool
@@ -481,15 +497,63 @@ app.get('/api/pools/:id/results', (req, res) => {
 
 // Leaderboard
 app.get('/api/pools/:id/leaderboard', (req, res) => {
-  const players = db.prepare('SELECT id, name, alive FROM players WHERE pool_id = ? ORDER BY alive DESC, created_at').all(req.params.id);
+  const players = db.prepare('SELECT id, name, alive, eliminated_round FROM players WHERE pool_id = ? ORDER BY alive DESC, created_at').all(req.params.id);
+
+  // Get results for W/L enrichment
+  const poolResults = db.prepare('SELECT round, region, matchup_idx, winner FROM results WHERE pool_id = ?').all(req.params.id);
+  const resultMap = {};
+  const gradedRounds = new Set();
+  for (const r of poolResults) {
+    resultMap[`${r.round}-${r.region}-${r.matchup_idx}`] = r.winner;
+    gradedRounds.add(r.round);
+  }
 
   const enriched = players.map(p => {
-    const picks = db.prepare('SELECT round, region, matchup_idx, team, locked FROM picks WHERE player_id = ? AND locked = 1 ORDER BY round').all(p.id);
+    const picks = db.prepare('SELECT round, region, matchup_idx, team, seed, locked FROM picks WHERE player_id = ? AND locked = 1 ORDER BY round').all(p.id);
     const roundsLocked = [...new Set(picks.map(pk => pk.round))].length;
-    return { ...p, picks, roundsLocked };
+
+    // Tiebreaker: combined seed of all locked picks (higher = riskier = better)
+    const combinedSeed = picks.reduce((sum, pk) => sum + (pk.seed || 0), 0);
+
+    // Correct picks count
+    let correctPicks = 0;
+    for (const pk of picks) {
+      const key = `${pk.round}-${pk.region}-${pk.matchup_idx}`;
+      if (resultMap[key] && resultMap[key] === pk.team) correctPicks++;
+    }
+
+    return { ...p, picks, roundsLocked, combinedSeed, correctPicks };
   });
 
-  res.json(enriched);
+  // Sort: alive first, then by eliminated_round (later = better), then by combinedSeed (higher = better)
+  enriched.sort((a, b) => {
+    if (a.alive !== b.alive) return b.alive - a.alive;
+    if (a.eliminated_round !== b.eliminated_round) return (b.eliminated_round ?? -1) - (a.eliminated_round ?? -1);
+    return b.combinedSeed - a.combinedSeed;
+  });
+
+  // Detect if pool has a winner or all-eliminated scenario
+  const aliveCount = enriched.filter(p => p.alive).length;
+  const totalPlayers = enriched.length;
+  const maxGradedRound = gradedRounds.size > 0 ? Math.max(...gradedRounds) : -1;
+
+  let poolStatus = 'active';
+  let winners = [];
+  if (totalPlayers > 0 && aliveCount === 0) {
+    // Everyone eliminated: tiebreaker among those eliminated in the latest round
+    poolStatus = 'all_eliminated';
+    const lastRound = Math.max(...enriched.map(p => p.eliminated_round ?? -1));
+    const lastRoundPlayers = enriched.filter(p => (p.eliminated_round ?? -1) === lastRound);
+    // Winner is highest combinedSeed among last-round eliminatees
+    const maxSeed = Math.max(...lastRoundPlayers.map(p => p.combinedSeed));
+    winners = lastRoundPlayers.filter(p => p.combinedSeed === maxSeed).map(p => p.name);
+  } else if (aliveCount === 1 && maxGradedRound >= 4) {
+    // Championship graded and one person alive: they win
+    poolStatus = 'winner';
+    winners = enriched.filter(p => p.alive).map(p => p.name);
+  }
+
+  res.json({ players: enriched, poolStatus, winners, aliveCount, totalPlayers });
 });
 
 // Admin: Auto-fetch results from ESPN for a round

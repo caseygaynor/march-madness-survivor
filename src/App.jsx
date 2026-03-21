@@ -343,6 +343,12 @@ function HomeView({ onCreatePool, onJoinPool }) {
             }}>
               Once you pick a team, you cannot pick them again in any later round. Choose wisely!
             </div>
+            <div style={{
+              marginTop: 8, padding: "8px 12px", backgroundColor: "rgba(99,102,241,0.15)",
+              borderRadius: 8, color: "#a5b4fc", fontSize: 13,
+            }}>
+              <strong style={{ color: "#c7d2fe" }}>Tiebreaker:</strong> If multiple players survive the same number of rounds, the player with the highest combined seed total across all picks wins. Picking lower-seeded teams is riskier but gives you the edge in a tiebreak.
+            </div>
           </div>
         </div>
 
@@ -659,7 +665,10 @@ function EliminatedView({ poolId, player, picks, matchups, onBack }) {
 
   useEffect(() => {
     api(`/pools/${poolId}/results`).then(setResults);
-    api(`/pools/${poolId}/leaderboard`).then(setLeaderboard);
+    api(`/pools/${poolId}/leaderboard`).then((data) => {
+      // New API returns { players, poolStatus, ... }
+      setLeaderboard(data.players || data);
+    });
   }, [poolId]);
 
   // Build results map
@@ -1096,7 +1105,14 @@ function PlayView({ poolId, player, onBack, onLiveScores }) {
       .filter(([, v]) => v)
       .map(([k, team]) => {
         const [region, idx] = k.split("-");
-        return { region, matchup_idx: parseInt(idx), team };
+        // Look up seed from matchup data
+        const matchup = matchups?.[region]?.[parseInt(idx)];
+        let seed = 0;
+        if (matchup) {
+          const t = [matchup.teamA, matchup.teamB].find(t => t.name === team);
+          if (t) seed = t.seed || 0;
+        }
+        return { region, matchup_idx: parseInt(idx), team, seed };
       });
 
     const result = await api(`/players/${player.id}/picks`, {
@@ -1652,131 +1668,300 @@ function ScoreCard({ game, pickedTeams }) {
   );
 }
 
-function LeaderboardView({ poolId, onBack }) {
-  const [data, setData] = useState(null);
-  const [results, setResults] = useState([]);
+// Confetti burst component
+function Confetti() {
+  const [particles] = useState(() =>
+    Array.from({ length: 50 }).map((_, i) => ({
+      id: i,
+      x: Math.random() * 100,
+      delay: Math.random() * 2,
+      duration: 2 + Math.random() * 3,
+      size: 4 + Math.random() * 6,
+      color: ["#f97316", "#ef4444", "#22c55e", "#3b82f6", "#eab308", "#a855f7", "#ec4899"][Math.floor(Math.random() * 7)],
+      drift: -20 + Math.random() * 40,
+    }))
+  );
+
+  return (
+    <div style={{ position: "fixed", top: 0, left: 0, width: "100%", height: "100%", pointerEvents: "none", zIndex: 1000, overflow: "hidden" }}>
+      {particles.map((p) => (
+        <div key={p.id} style={{
+          position: "absolute",
+          left: `${p.x}%`,
+          top: -10,
+          width: p.size,
+          height: p.size * 1.5,
+          backgroundColor: p.color,
+          borderRadius: 1,
+          animation: `confettiFall ${p.duration}s ease-in ${p.delay}s forwards`,
+          transform: `rotate(${Math.random() * 360}deg)`,
+        }} />
+      ))}
+      <style>{`
+        @keyframes confettiFall {
+          0% { transform: translateY(0) translateX(0) rotate(0deg); opacity: 1; }
+          100% { transform: translateY(100vh) translateX(${Math.random() > 0.5 ? '' : '-'}${20 + Math.random() * 40}px) rotate(720deg); opacity: 0; }
+        }
+      `}</style>
+    </div>
+  );
+}
+
+function LeaderboardView({ poolId, player: currentPlayer, onBack }) {
+  const [lb, setLb] = useState(null);
   const [expandedPlayer, setExpandedPlayer] = useState(null);
+  const [showConfetti, setShowConfetti] = useState(false);
 
   useEffect(() => {
-    api(`/pools/${poolId}/leaderboard`).then(setData);
-    api(`/pools/${poolId}/results`).then(setResults);
-  }, [poolId]);
+    api(`/pools/${poolId}/leaderboard`).then((data) => {
+      setLb(data);
+      // Trigger confetti if there's a winner and it's the current player
+      if (data.poolStatus === 'winner' && data.winners?.includes(currentPlayer?.name)) {
+        setShowConfetti(true);
+        setTimeout(() => setShowConfetti(false), 6000);
+      }
+    });
+  }, [poolId, currentPlayer?.name]);
 
-  if (!data) return <div style={{ ...s.page, ...s.center }}><div style={{ color: "#64748b" }}>Loading...</div></div>;
+  if (!lb) return <div style={{ ...s.page, ...s.center }}><div style={{ color: "#64748b" }}>Loading...</div></div>;
 
-  const alive = data.filter((p) => p.alive).length;
+  const { players: data, poolStatus, winners, aliveCount, totalPlayers } = lb;
 
-  // Build results map for W/L checking
-  const resultMap = {};
+  // Build results map for W/L
   const gradedRounds = new Set();
-  for (const r of results) {
-    resultMap[`${r.round}-${r.region}-${r.matchup_idx}`] = r.winner;
-    gradedRounds.add(r.round);
-  }
+  const resultMap = {};
+  // We need results for pick details -- fetch from the picks data
+  // The server now includes all the info we need in leaderboard response
 
   return (
     <div style={s.page}>
+      {showConfetti && <Confetti />}
       <button onClick={onBack} style={s.backBtn}>&#8592; Back</button>
-      <div style={{ maxWidth: 600, margin: "0 auto" }}>
-        <h2 style={{ color: "#fff", fontSize: 28, margin: "0 0 8px 0" }}>Leaderboard</h2>
-        <p style={{ color: "#64748b", fontSize: 14, margin: "0 0 24px 0" }}>
-          {alive} of {data.length} players still alive
-        </p>
+      <div style={{ maxWidth: 640, margin: "0 auto" }}>
 
-        <div style={{ ...s.card, overflow: "hidden", padding: 0 }}>
+        {/* Winner / All-Eliminated Banner */}
+        {poolStatus === 'winner' && winners.length > 0 && (
           <div style={{
-            display: "grid", gridTemplateColumns: "32px 1fr 70px 70px",
-            padding: "12px 16px", fontSize: 11, color: "#64748b",
-            textTransform: "uppercase", letterSpacing: 1, borderBottom: "1px solid rgba(255,255,255,0.05)",
+            textAlign: "center", padding: "24px 20px", marginBottom: 20,
+            background: "linear-gradient(135deg, rgba(234,179,8,0.2), rgba(249,115,22,0.2))",
+            border: "1px solid rgba(234,179,8,0.4)",
+            borderRadius: 16,
           }}>
-            <div>#</div><div>Player</div><div style={{ textAlign: "center" }}>Status</div><div style={{ textAlign: "center" }}>Rounds</div>
+            <div style={{ fontSize: 56, marginBottom: 8 }}>{"\u{1F3C6}"}</div>
+            <h2 style={{ color: "#fbbf24", fontSize: 28, margin: "0 0 4px 0" }}>
+              {winners.length === 1 ? "Champion!" : "Co-Champions!"}
+            </h2>
+            <div style={{ color: "#fff", fontSize: 22, fontWeight: 800 }}>
+              {winners.join(" & ")}
+            </div>
+            <div style={{ color: "#94a3b8", fontSize: 13, marginTop: 8 }}>
+              Survived the entire tournament. Absolute legend{winners.length > 1 ? "s" : ""}.
+            </div>
           </div>
+        )}
 
-          {data.map((p, i) => (
-            <div key={p.id}>
-              <div onClick={() => setExpandedPlayer(expandedPlayer === p.id ? null : p.id)} style={{
-                display: "grid", gridTemplateColumns: "32px 1fr 70px 70px",
-                padding: "14px 16px", borderBottom: "1px solid rgba(255,255,255,0.03)",
-                opacity: p.alive ? 1 : 0.5, cursor: "pointer",
-                backgroundColor: expandedPlayer === p.id ? "rgba(249,115,22,0.05)" : "transparent",
-                transition: "background-color 0.15s",
+        {poolStatus === 'all_eliminated' && (
+          <div style={{
+            textAlign: "center", padding: "24px 20px", marginBottom: 20,
+            background: "linear-gradient(135deg, rgba(239,68,68,0.15), rgba(249,115,22,0.15))",
+            border: "1px solid rgba(239,68,68,0.3)",
+            borderRadius: 16,
+          }}>
+            <div style={{ fontSize: 48, marginBottom: 8 }}>{"\u{1F4A5}"}</div>
+            <h2 style={{ color: "#f87171", fontSize: 24, margin: "0 0 4px 0" }}>
+              Total Wipeout!
+            </h2>
+            <div style={{ color: "#94a3b8", fontSize: 14, marginBottom: 8 }}>
+              Everyone got eliminated in the same round. March Madness wins again.
+            </div>
+            {winners.length > 0 && (
+              <div style={{
+                display: "inline-block", padding: "10px 20px", borderRadius: 12,
+                background: "rgba(234,179,8,0.15)", border: "1px solid rgba(234,179,8,0.3)",
               }}>
-                <div style={{ color: "#64748b", fontWeight: 600 }}>{i + 1}</div>
-                <div style={{ color: "#fff", fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
-                  {p.name}
-                  <span style={{ color: "#475569", fontSize: 11 }}>{expandedPlayer === p.id ? "\u25B2" : "\u25BC"}</span>
+                <div style={{ color: "#fbbf24", fontSize: 12, textTransform: "uppercase", letterSpacing: 1 }}>
+                  Winner by tiebreak (highest combined seed)
                 </div>
-                <div style={{ textAlign: "center" }}>
-                  <span style={{
-                    padding: "4px 10px", borderRadius: 20, fontSize: 11, fontWeight: 700,
-                    backgroundColor: p.alive ? "rgba(34,197,94,0.15)" : "rgba(239,68,68,0.15)",
-                    color: p.alive ? "#22c55e" : "#ef4444",
-                  }}>
-                    {p.alive ? "ALIVE" : "OUT"}
-                  </span>
-                </div>
-                <div style={{ textAlign: "center", color: "#94a3b8", fontSize: 14 }}>
-                  {p.roundsLocked} / {ROUND_CONFIG.length}
+                <div style={{ color: "#fff", fontSize: 20, fontWeight: 800, marginTop: 2 }}>
+                  {winners.join(" & ")}
                 </div>
               </div>
+            )}
+          </div>
+        )}
 
-              {/* Expanded pick details with W/L after grading */}
-              {expandedPlayer === p.id && (
-                <div style={{
-                  padding: "12px 16px 16px 56px",
-                  borderBottom: "1px solid rgba(255,255,255,0.05)",
-                  backgroundColor: "rgba(255,255,255,0.02)",
+        {/* Header */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 16 }}>
+          <h2 style={{ color: "#fff", fontSize: 28, margin: 0 }}>Leaderboard</h2>
+          <span style={{ color: "#64748b", fontSize: 14 }}>
+            {aliveCount} / {totalPlayers} alive
+          </span>
+        </div>
+
+        {/* Player cards */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {data.map((p, i) => {
+            const isWinner = winners.includes(p.name);
+            const isCurrentPlayer = currentPlayer && p.name === currentPlayer.name;
+            const isExpanded = expandedPlayer === p.id;
+
+            // Survival timeline: which rounds did this player survive?
+            const survivalRounds = ROUND_CONFIG.map((rc, ri) => {
+              const hasPicks = p.picks.some(pk => pk.round === ri);
+              const elim = p.eliminated_round ?? -1;
+              if (ri < elim || (p.alive && hasPicks)) return "survived";
+              if (ri === elim) return "eliminated";
+              if (!hasPicks) return "future";
+              return "future";
+            });
+
+            return (
+              <div key={p.id} style={{
+                borderRadius: 12, overflow: "hidden",
+                border: isWinner ? "2px solid rgba(234,179,8,0.5)"
+                  : isCurrentPlayer ? "1px solid rgba(249,115,22,0.3)"
+                  : "1px solid rgba(255,255,255,0.06)",
+                backgroundColor: isWinner ? "rgba(234,179,8,0.05)" : "rgba(255,255,255,0.03)",
+                transition: "all 0.2s ease",
+              }}>
+                {/* Main row */}
+                <div onClick={() => setExpandedPlayer(isExpanded ? null : p.id)} style={{
+                  display: "flex", alignItems: "center", padding: "14px 16px",
+                  cursor: "pointer", gap: 12,
                 }}>
-                  {p.picks.length === 0 ? (
-                    <div style={{ color: "#64748b", fontSize: 13 }}>No picks locked yet</div>
-                  ) : (
-                    (() => {
-                      const byRound = {};
-                      for (const pk of p.picks) {
-                        if (!byRound[pk.round]) byRound[pk.round] = [];
-                        byRound[pk.round].push(pk);
-                      }
-                      return Object.entries(byRound).map(([r, roundPicks]) => {
-                        const roundNum = parseInt(r);
-                        const isGraded = gradedRounds.has(roundNum);
-                        return (
-                          <div key={r} style={{ marginBottom: 10 }}>
-                            <div style={{ color: "#94a3b8", fontSize: 12, fontWeight: 600, marginBottom: 4 }}>
-                              {ROUND_CONFIG[roundNum]?.name || `Round ${r}`}
-                            </div>
-                            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                              {roundPicks.map((pk, pi) => {
-                                const resultKey = `${pk.round}-${pk.region}-${pk.matchup_idx}`;
-                                const winner = resultMap[resultKey];
-                                const won = winner && winner === pk.team;
-                                const lost = winner && winner !== pk.team;
-                                return (
+                  {/* Rank */}
+                  <div style={{
+                    width: 32, height: 32, borderRadius: "50%",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    fontSize: i === 0 && p.alive ? 20 : 14,
+                    fontWeight: 700,
+                    backgroundColor: i === 0 && p.alive ? "rgba(234,179,8,0.2)" : "rgba(255,255,255,0.05)",
+                    color: i === 0 && p.alive ? "#fbbf24" : "#64748b",
+                    flexShrink: 0,
+                  }}>
+                    {i === 0 && p.alive ? "\u{1F451}" : i + 1}
+                  </div>
+
+                  {/* Name + survival timeline */}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{
+                      color: isWinner ? "#fbbf24" : "#fff",
+                      fontWeight: 700, fontSize: 15,
+                      display: "flex", alignItems: "center", gap: 6,
+                    }}>
+                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {p.name}
+                      </span>
+                      {isCurrentPlayer && <span style={{ color: "#f97316", fontSize: 10, fontWeight: 600 }}>YOU</span>}
+                      {isWinner && <span style={{ fontSize: 14 }}>{"\u{1F3C6}"}</span>}
+                    </div>
+                    {/* Survival timeline dots */}
+                    <div style={{ display: "flex", gap: 3, marginTop: 4 }}>
+                      {survivalRounds.map((status, ri) => (
+                        <div key={ri} style={{ display: "flex", alignItems: "center", gap: 2 }}>
+                          <div style={{
+                            width: status === "eliminated" ? 10 : 8,
+                            height: status === "eliminated" ? 10 : 8,
+                            borderRadius: "50%",
+                            backgroundColor: status === "survived" ? "#22c55e"
+                              : status === "eliminated" ? "#ef4444"
+                              : "rgba(255,255,255,0.1)",
+                            border: status === "eliminated" ? "2px solid #ef4444" : "none",
+                            transition: "all 0.3s ease",
+                          }} title={ROUND_CONFIG[ri].name} />
+                          {ri < ROUND_CONFIG.length - 1 && (
+                            <div style={{
+                              width: 8, height: 2,
+                              backgroundColor: status === "survived" ? "rgba(34,197,94,0.3)" : "rgba(255,255,255,0.05)",
+                            }} />
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Stats */}
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                    {p.combinedSeed > 0 && (
+                      <div style={{
+                        padding: "2px 8px", borderRadius: 6, fontSize: 11,
+                        backgroundColor: "rgba(99,102,241,0.15)", color: "#a5b4fc",
+                        fontWeight: 600,
+                      }} title="Combined seed (tiebreaker)">
+                        {"\u2191"}{p.combinedSeed}
+                      </div>
+                    )}
+                    <span style={{
+                      padding: "4px 10px", borderRadius: 20, fontSize: 11, fontWeight: 700,
+                      backgroundColor: p.alive ? "rgba(34,197,94,0.15)" : "rgba(239,68,68,0.15)",
+                      color: p.alive ? "#22c55e" : "#ef4444",
+                    }}>
+                      {p.alive ? "ALIVE" : `R${(p.eliminated_round ?? 0) + 1}`}
+                    </span>
+                    <span style={{ color: "#475569", fontSize: 11, transition: "transform 0.2s", transform: isExpanded ? "rotate(180deg)" : "rotate(0)" }}>
+                      {"\u25BC"}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Expanded pick details */}
+                {isExpanded && (
+                  <div style={{
+                    padding: "0 16px 16px 60px",
+                    borderTop: "1px solid rgba(255,255,255,0.05)",
+                    paddingTop: 12,
+                  }}>
+                    {p.picks.length === 0 ? (
+                      <div style={{ color: "#64748b", fontSize: 13 }}>No picks locked yet</div>
+                    ) : (
+                      (() => {
+                        const byRound = {};
+                        for (const pk of p.picks) {
+                          if (!byRound[pk.round]) byRound[pk.round] = [];
+                          byRound[pk.round].push(pk);
+                        }
+                        return Object.entries(byRound).map(([r, roundPicks]) => {
+                          const roundNum = parseInt(r);
+                          // Check if this round has been graded by looking at picks' correctness
+                          const roundCorrect = roundPicks.filter(pk => pk.correct === true).length;
+                          const roundWrong = roundPicks.filter(pk => pk.correct === false).length;
+                          const isGraded = roundCorrect > 0 || roundWrong > 0;
+                          return (
+                            <div key={r} style={{ marginBottom: 10 }}>
+                              <div style={{ color: "#94a3b8", fontSize: 12, fontWeight: 600, marginBottom: 4 }}>
+                                {ROUND_CONFIG[roundNum]?.name || `Round ${r}`}
+                              </div>
+                              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                                {roundPicks.map((pk, pi) => (
                                   <span key={pi} style={{
                                     display: "inline-flex", alignItems: "center", gap: 4,
                                     padding: "4px 10px", borderRadius: 6, fontSize: 13,
-                                    backgroundColor: !isGraded ? "rgba(255,255,255,0.05)"
-                                      : won ? "rgba(34,197,94,0.15)"
-                                      : lost ? "rgba(239,68,68,0.15)"
-                                      : "rgba(255,255,255,0.05)",
-                                    color: !isGraded ? "#94a3b8" : won ? "#22c55e" : lost ? "#ef4444" : "#94a3b8",
-                                    border: `1px solid ${!isGraded ? "rgba(255,255,255,0.1)" : won ? "rgba(34,197,94,0.3)" : lost ? "rgba(239,68,68,0.3)" : "rgba(255,255,255,0.1)"}`,
+                                    backgroundColor: "rgba(255,255,255,0.05)",
+                                    color: "#cbd5e1",
+                                    border: "1px solid rgba(255,255,255,0.1)",
                                   }}>
+                                    {pk.seed > 0 && (
+                                      <span style={{ fontSize: 10, color: "#64748b", fontWeight: 600 }}>({pk.seed})</span>
+                                    )}
                                     {pk.team}
-                                    {isGraded && won && <span style={{ fontWeight: 700 }}> W</span>}
-                                    {isGraded && lost && <span style={{ fontWeight: 700 }}> L</span>}
                                   </span>
-                                );
-                              })}
+                                ))}
+                              </div>
                             </div>
-                          </div>
-                        );
-                      });
-                    })()
-                  )}
-                </div>
-              )}
-            </div>
-          ))}
+                          );
+                        });
+                      })()
+                    )}
+                    {p.combinedSeed > 0 && (
+                      <div style={{ color: "#64748b", fontSize: 11, marginTop: 6 }}>
+                        Tiebreaker score: {p.combinedSeed} (combined seed)
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>
@@ -2132,6 +2317,7 @@ export default function App() {
       return (
         <LeaderboardView
           poolId={poolId}
+          player={player}
           onBack={() => setView("lobby")}
         />
       );
