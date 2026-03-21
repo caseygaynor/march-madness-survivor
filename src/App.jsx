@@ -948,7 +948,7 @@ function PoolLobby({ poolId, player, onPlay, onLeaderboard, onAdmin, onLiveScore
                 color: p.alive ? "#22c55e" : "#ef4444",
                 border: p.name === player.name ? "1px solid currentColor" : "1px solid transparent",
               }}>
-                {p.name}{!p.alive ? " (out)" : ""}
+                {p.name}
               </span>
             ))}
           </div>

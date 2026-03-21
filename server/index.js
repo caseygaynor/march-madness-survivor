@@ -294,35 +294,77 @@ async function fetchRoundScores(roundIdx) {
 // AUTO-SYNC & AUTO-GRADE ENGINE
 // ============================================================
 
-// All teams in our bracket (for matching ESPN names)
-const ALL_BRACKET_TEAMS = new Set();
-for (const region of ['East', 'South', 'West', 'Midwest']) {
-  // We'll populate this from the results + picks tables dynamically
+// Round of 32 matchups: who plays who in each region + matchup index
+// This is the source of truth for matching ESPN games to our bracket.
+// Each matchup lists BOTH teams so we can match even if nobody picked one of them.
+const R32_MATCHUPS = {
+  East: [
+    { idx: 0, teams: ["Duke", "TCU"] },
+    { idx: 1, teams: ["St. John's", "Kansas"] },
+    { idx: 2, teams: ["Louisville", "Michigan State"] },
+    { idx: 3, teams: ["UCLA", "UConn"] },
+  ],
+  South: [
+    { idx: 0, teams: ["Florida", "Iowa"] },
+    { idx: 1, teams: ["Vanderbilt", "Nebraska"] },
+    { idx: 2, teams: ["VCU", "Illinois"] },
+    { idx: 3, teams: ["Texas A&M", "Houston"] },
+  ],
+  West: [
+    { idx: 0, teams: ["Arizona", "Utah State"] },
+    { idx: 1, teams: ["High Point", "Arkansas"] },
+    { idx: 2, teams: ["Texas", "Gonzaga"] },
+    { idx: 3, teams: ["Miami (FL)", "Purdue"] },
+  ],
+  Midwest: [
+    { idx: 0, teams: ["Michigan", "Saint Louis"] },
+    { idx: 1, teams: ["Texas Tech", "Alabama"] },
+    { idx: 2, teams: ["Tennessee", "Virginia"] },
+    { idx: 3, teams: ["Kentucky", "Iowa State"] },
+  ],
+};
+
+// Build a fast lookup: team name -> { region, matchup_idx }
+const TEAM_TO_MATCHUP = {};
+for (const [region, matchups] of Object.entries(R32_MATCHUPS)) {
+  for (const m of matchups) {
+    for (const team of m.teams) {
+      TEAM_TO_MATCHUP[team] = { region, matchup_idx: m.idx };
+    }
+  }
 }
 
 // Match an ESPN game to a specific matchup in our bracket
 // Returns { region, matchup_idx } or null
 function matchGameToMatchup(game, round, poolId) {
-  // Get all existing results for this pool + round to know which matchups exist
+  const gameTeams = [game.home.name, game.away.name];
+
+  // For Round of 32 (round 0), use the hardcoded bracket data
+  if (round === 0) {
+    for (const teamName of gameTeams) {
+      if (TEAM_TO_MATCHUP[teamName]) {
+        return TEAM_TO_MATCHUP[teamName];
+      }
+    }
+    console.log(`[SYNC] Could not match R32 game: ${gameTeams.join(' vs ')}`);
+    return null;
+  }
+
+  // For later rounds, match via picks + existing results
   const existingResults = db.prepare(
     'SELECT region, matchup_idx, winner FROM results WHERE pool_id = ? AND round = ?'
   ).all(poolId, round);
 
-  // Get all picks for this round to find which teams are in which matchups
   const allPicks = db.prepare(
     'SELECT DISTINCT region, matchup_idx, team FROM picks WHERE round = ?'
   ).all(round);
 
-  // Build a map of matchup_idx -> teams in that matchup
   const matchupTeams = {};
   for (const pick of allPicks) {
     const key = `${pick.region}-${pick.matchup_idx}`;
     if (!matchupTeams[key]) matchupTeams[key] = new Set();
     matchupTeams[key].add(pick.team);
   }
-
-  // Check if either team in the ESPN game matches a team in any matchup
-  const gameTeams = [game.home.name, game.away.name];
 
   for (const [key, teams] of Object.entries(matchupTeams)) {
     for (const gt of gameTeams) {
@@ -333,13 +375,13 @@ function matchGameToMatchup(game, round, poolId) {
     }
   }
 
-  // Also check existing results
   for (const r of existingResults) {
     if (gameTeams.includes(r.winner)) {
       return { region: r.region, matchup_idx: r.matchup_idx };
     }
   }
 
+  console.log(`[SYNC] Could not match round ${round} game: ${gameTeams.join(' vs ')}`);
   return null;
 }
 
