@@ -865,8 +865,8 @@ function PoolLobby({ poolId, player, onPlay, onLeaderboard, onAdmin, onLiveScore
       border: "rgba(239,68,68,0.3)",
       color: "#fca5a5",
       icon: "\u{1F480}",
-      title: "You've been eliminated",
-      message: "You're out of contention, but you can still make picks for bragging rights!",
+      title: "Eliminated from contention",
+      message: "You can still pick for future rounds. Your results will appear on the Full Pool leaderboard.",
     };
   } else if (hasLockedCurrentRound) {
     const beforeDeadline = isBeforeDeadline(currentRound);
@@ -1351,6 +1351,7 @@ function PlayView({ poolId, player, onBack, onLiveScores }) {
   const [usedTeams, setUsedTeams] = useState([]);
   const [currentRoundLockedTeams, setCurrentRoundLockedTeams] = useState([]);
   const [lockedRounds, setLockedRounds] = useState([]);
+  const [playerAlive, setPlayerAlive] = useState(player.alive);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [editMode, setEditMode] = useState(false);
@@ -1426,9 +1427,9 @@ function PlayView({ poolId, player, onBack, onLiveScores }) {
         // Refresh player data to check if eliminated
         const poolData = await api(`/pools/${poolId}`);
         const serverPlayer = poolData.players?.find(p => p.id === player.id);
-        if (serverPlayer && !serverPlayer.alive && player.alive) {
-          // Player was just eliminated! Trigger re-render
-          player.alive = false;
+        if (serverPlayer && !serverPlayer.alive) {
+          setPlayerAlive(false);
+          player.alive = false; // also sync the prop for parent
         }
       } catch (e) {
         // Silently fail, will retry on next poll
@@ -1604,7 +1605,7 @@ function PlayView({ poolId, player, onBack, onLiveScores }) {
 
   if (loading) return <div style={{ ...s.page, ...s.center }}><div style={{ color: "#64748b" }}>Loading picks...</div></div>;
 
-  const isEliminated = !player.alive;
+  const isEliminated = !playerAlive;
 
   // Build player's picks map by round for bracket view
   const playerPicksByRound = {};
@@ -1619,21 +1620,21 @@ function PlayView({ poolId, player, onBack, onLiveScores }) {
     <div style={s.page}>
       <button onClick={onBack} style={s.backBtn}>&#9664; Pool</button>
 
-      {/* Eliminated banner - keep playing for bragging rights */}
+      {/* Eliminated banner */}
       {isEliminated && (
         <div style={{
           padding: "14px 18px", borderRadius: 12, marginBottom: 16,
-          background: "linear-gradient(135deg, rgba(239,68,68,0.1), rgba(249,115,22,0.1))",
-          border: "1px solid rgba(239,68,68,0.2)",
+          background: "linear-gradient(135deg, rgba(239,68,68,0.12), rgba(239,68,68,0.06))",
+          border: "1px solid rgba(239,68,68,0.25)",
           display: "flex", alignItems: "center", gap: 12,
         }}>
           <span style={{ fontSize: 24, flexShrink: 0 }}>{"\u{1F480}"}</span>
           <div>
             <div style={{ color: "#fca5a5", fontWeight: 700, fontSize: 14 }}>
-              You've been eliminated
+              Eliminated from contention
             </div>
-            <div style={{ color: "#94a3b8", fontSize: 12, marginTop: 2 }}>
-              Keep picking for bragging rights! Your picks won't count toward winning the pool.
+            <div style={{ color: "#64748b", fontSize: 12, marginTop: 2 }}>
+              You can still make picks for future rounds. Your results will show on the Full Pool leaderboard.
             </div>
           </div>
         </div>
@@ -1843,10 +1844,12 @@ function PlayView({ poolId, player, onBack, onLiveScores }) {
                     backgroundColor: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.25)",
                     color: "#fca5a5", fontSize: 13, fontWeight: 600,
                   }}>
-                    One of your picks lost. You'll be eliminated when the round is finalized.
+                    {isEliminated
+                      ? "You've been eliminated from contention. Your remaining picks still get graded on the Full Pool leaderboard."
+                      : "One of your picks lost. You'll be eliminated once the result is confirmed."}
                   </div>
                 )}
-                {correct === entries.length && entries.length > 0 && (
+                {correct === entries.length && entries.length > 0 && !isEliminated && (
                   <div style={{
                     textAlign: "center", padding: "10px 16px", borderRadius: 10, marginBottom: 16,
                     backgroundColor: "rgba(34,197,94,0.12)", border: "1px solid rgba(34,197,94,0.25)",
