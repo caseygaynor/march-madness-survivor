@@ -282,7 +282,12 @@ const s = {
     border: "2px solid rgba(255,255,255,0.2)", backgroundColor: "transparent",
     color: "#fff", cursor: "pointer", whiteSpace: "nowrap",
   },
-  backBtn: { background: "none", border: "none", color: "#94a3b8", cursor: "pointer", fontSize: 14, marginBottom: 16, padding: "4px 0" },
+  backBtn: {
+    display: "inline-flex", alignItems: "center", gap: 6, background: "rgba(255,255,255,0.05)",
+    border: "1px solid rgba(255,255,255,0.1)", color: "#94a3b8", cursor: "pointer",
+    fontSize: 13, fontWeight: 500, padding: "8px 16px 8px 12px", borderRadius: 20,
+    transition: "all 0.15s ease", marginBottom: 16,
+  },
   regionColors: { East: "#3b82f6", South: "#ef4444", West: "#22c55e", Midwest: "#eab308" },
 };
 
@@ -565,7 +570,7 @@ function CreatePoolView({ onBack, onCreated }) {
 
   return (
     <div style={s.page}>
-      <button onClick={onBack} style={s.backBtn}>&#8592; Back</button>
+      <button onClick={onBack} style={s.backBtn}>&#9664; Back</button>
       <div style={{ maxWidth: 400, margin: "60px auto 0" }}>
         <h2 style={{ color: "#fff", fontSize: 28, margin: "0 0 24px 0" }}>Create a Pool</h2>
         <div style={{ display: "flex", gap: 8 }}>
@@ -605,7 +610,7 @@ function RulesGate({ onAccept, onBack }) {
 
   return (
     <div style={s.page}>
-      <button onClick={onBack} style={s.backBtn}>&#8592; Back</button>
+      <button onClick={onBack} style={s.backBtn}>&#9664; Back</button>
       <div style={{ maxWidth: 440, margin: "40px auto 0", padding: "0 16px" }}>
         <div style={{ textAlign: "center", marginBottom: 20 }}>
           <div style={{ fontSize: 40, marginBottom: 8 }}>📋</div>
@@ -702,11 +707,31 @@ function JoinPoolView({ onBack, onJoined, initialCode }) {
     return <RulesGate onAccept={() => setRulesAccepted(true)} onBack={onBack} />;
   }
 
+  // Countdown to next lock deadline
+  const nextDeadline = ROUND_CONFIG[0].lockTime;
+  const { timeLeft: countdown, expired: deadlinePassed } = useCountdown(nextDeadline);
+
   return (
     <div style={s.page}>
-      <button onClick={onBack} style={s.backBtn}>&#8592; Back</button>
-      <div style={{ maxWidth: 400, margin: "60px auto 0" }}>
-        <h2 style={{ color: "#fff", fontSize: 28, margin: "0 0 24px 0" }}>Join a Pool</h2>
+      <button onClick={onBack} style={s.backBtn}>&#9664; Back</button>
+      <div style={{ maxWidth: 400, margin: "40px auto 0" }}>
+        <h2 style={{ color: "#fff", fontSize: 28, margin: "0 0 8px 0" }}>Join a Pool</h2>
+
+        {/* Countdown timer */}
+        {!deadlinePassed && (
+          <div style={{
+            display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+            padding: "10px 16px", borderRadius: 10, marginBottom: 20,
+            background: "linear-gradient(135deg, rgba(249,115,22,0.12), rgba(239,68,68,0.12))",
+            border: "1px solid rgba(249,115,22,0.2)",
+          }}>
+            <span style={{ fontSize: 16 }}>{"\u{23F0}"}</span>
+            <span style={{ color: "#fdba74", fontSize: 13, fontWeight: 600 }}>Picks lock in </span>
+            <span style={{
+              color: "#f97316", fontSize: 15, fontWeight: 800, fontFamily: "monospace", letterSpacing: 1,
+            }}>{countdown}</span>
+          </div>
+        )}
 
         {!pool ? (
           <>
@@ -717,7 +742,7 @@ function JoinPoolView({ onBack, onJoined, initialCode }) {
                 backgroundColor: "rgba(34,197,94,0.1)", border: "1px solid rgba(34,197,94,0.3)",
               }}>
                 <span style={{ fontSize: 20 }}>&#10003;</span>
-                <span style={{ color: "#86efac", fontSize: 14 }}>Pool code ready</span>
+                <span style={{ color: "#86efac", fontSize: 14 }}>Pool code ready -- tap Join to get in!</span>
               </div>
             ) : (
               <p style={{ color: "#94a3b8", fontSize: 14, marginBottom: 16 }}>Enter the pool code your friend shared:</p>
@@ -733,30 +758,33 @@ function JoinPoolView({ onBack, onJoined, initialCode }) {
                   ...(initialCode && code ? { borderColor: "#22c55e", color: "#22c55e" } : {}),
                 }}
               />
-              <div style={{ position: "relative" }}>
-                {initialCode && code && (
-                  <span style={{
-                    position: "absolute", top: -18, left: "50%", transform: "translateX(-50%)",
-                    fontSize: 16, animation: "pulse 1.5s infinite",
-                  }}>&#11015;</span>
-                )}
-                <button onClick={lookupPool} style={{
-                  ...s.btnPrimary, padding: "12px 20px", fontSize: 14,
-                  ...(initialCode && code ? { backgroundColor: "#22c55e", animation: "pulse 1.5s infinite" } : {}),
-                }}>Find</button>
-              </div>
+              <button onClick={lookupPool} style={{
+                ...s.btnPrimary, padding: "12px 20px", fontSize: 14,
+                ...(initialCode && code ? { backgroundColor: "#22c55e" } : {}),
+              }}>{initialCode && code ? "Join" : "Find"}</button>
             </div>
           </>
         ) : (
           <>
             <div style={{ ...s.card, marginBottom: 20 }}>
-              <div style={{ color: "#fff", fontWeight: 700, fontSize: 18 }}>{pool.name}</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                <span style={{ fontSize: 20 }}>{"\u{1F3C0}"}</span>
+                <div style={{ color: "#fff", fontWeight: 700, fontSize: 18 }}>{pool.name}</div>
+              </div>
               {pool.players.length === 0 ? (
-                <div style={{ color: "#64748b", fontSize: 13, marginTop: 4 }}>Be the first to join!</div>
+                <div style={{
+                  padding: "12px 16px", borderRadius: 10, textAlign: "center",
+                  background: "linear-gradient(135deg, rgba(249,115,22,0.1), rgba(239,68,68,0.08))",
+                  border: "1px dashed rgba(249,115,22,0.3)",
+                }}>
+                  <div style={{ fontSize: 24, marginBottom: 4 }}>{"\u{1F3C6}"}</div>
+                  <div style={{ color: "#fdba74", fontSize: 14, fontWeight: 600 }}>Be the first to join!</div>
+                  <div style={{ color: "#64748b", fontSize: 12, marginTop: 2 }}>Claim your spot before your friends do</div>
+                </div>
               ) : (
-                <div style={{ marginTop: 8 }}>
+                <div>
                   <div style={{ color: "#64748b", fontSize: 11, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>
-                    {pool.players.length} player{pool.players.length !== 1 ? "s" : ""} in the pool
+                    {pool.players.length} player{pool.players.length !== 1 ? "s" : ""} waiting
                   </div>
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                     {pool.players.slice(0, 10).map((p, i) => (
@@ -787,7 +815,9 @@ function JoinPoolView({ onBack, onJoined, initialCode }) {
                 placeholder="Your name"
                 style={s.input}
               />
-              <button onClick={handleJoin} style={{ ...s.btnPrimary, padding: "12px 20px", fontSize: 14 }}>Join</button>
+              <button onClick={handleJoin} style={{
+                ...s.btnPrimary, padding: "12px 24px", fontSize: 15, fontWeight: 700,
+              }}>Join</button>
             </div>
           </>
         )}
@@ -798,7 +828,7 @@ function JoinPoolView({ onBack, onJoined, initialCode }) {
   );
 }
 
-function PoolLobby({ poolId, player, onPlay, onLeaderboard, onAdmin, onLiveScores, onLogout }) {
+function PoolLobby({ poolId, player, onPlay, onLeaderboard, onAdmin, onLiveScores, onBracket, onLogout }) {
   const [pool, setPool] = useState(null);
   const [playerPicks, setPlayerPicks] = useState(null);
   const [currentRound, setCurrentRound] = useState(0);
@@ -860,16 +890,27 @@ function PoolLobby({ poolId, player, onPlay, onLeaderboard, onAdmin, onLiveScore
   return (
     <div style={{ ...s.page, ...s.center }}>
       <div style={{ textAlign: "center", maxWidth: 500 }}>
-        <div style={{ fontSize: 48, marginBottom: 12 }}>{"\u{1F3C0}"}</div>
-        <h2 style={{ color: "#fff", fontSize: 32, margin: "0 0 4px 0" }}>{pool.name}</h2>
-        <p style={{ color: "#64748b", fontSize: 14, marginBottom: 8 }}>
-          Logged in as <strong style={{ color: "#f97316" }}>{player.name}</strong>
+        {/* Hero */}
+        <h1 style={{ color: "#fff", fontSize: 36, fontWeight: 800, margin: "0 0 2px 0", lineHeight: 1.1 }}>
+          Welcome to March
+        </h1>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, marginBottom: 6 }}>
+          <span style={{ fontSize: 24 }}>{"\u{1F3C0}"}</span>
+          <span style={{
+            fontSize: 18, fontWeight: 700,
+            background: "linear-gradient(90deg, #f97316, #ef4444)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent",
+          }}>{pool.name}</span>
+        </div>
+        <p style={{ color: "#64748b", fontSize: 13, margin: "0 0 6px 0" }}>
+          Playing as <strong style={{ color: "#f97316" }}>{player.name}</strong>
+          <span style={{ margin: "0 8px", color: "#334155" }}>|</span>
+          <span style={{ color: "#475569", fontFamily: "monospace", fontSize: 11, letterSpacing: 2 }}>{poolId}</span>
         </p>
 
         {/* Round status banner */}
         {statusBanner && (
           <div style={{
-            padding: "16px 20px", borderRadius: 12, marginBottom: 20,
+            padding: "16px 20px", borderRadius: 12, marginBottom: 20, marginTop: 16,
             backgroundColor: statusBanner.bg, border: `1px solid ${statusBanner.border}`,
             textAlign: "left",
           }}>
@@ -882,19 +923,6 @@ function PoolLobby({ poolId, player, onPlay, onLeaderboard, onAdmin, onLiveScore
             </div>
           </div>
         )}
-
-        <div style={{
-          display: "inline-block", padding: "10px 24px", borderRadius: 8,
-          backgroundColor: "rgba(249,115,22,0.1)", border: "1px solid rgba(249,115,22,0.3)",
-          marginBottom: 24,
-        }}>
-          <div style={{ color: "#64748b", fontSize: 11, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>
-            Pool Code
-          </div>
-          <div style={{ color: "#f97316", fontSize: 28, fontWeight: 800, letterSpacing: 4, fontFamily: "monospace" }}>
-            {poolId}
-          </div>
-        </div>
 
         <div style={{ ...s.card, marginBottom: 20, textAlign: "left" }}>
           <div style={{ color: "#94a3b8", fontSize: 13, marginBottom: 8 }}>
@@ -946,6 +974,7 @@ function PoolLobby({ poolId, player, onPlay, onLeaderboard, onAdmin, onLiveScore
             }}>Live Scores</button>
           )}
           <button onClick={onLeaderboard} style={s.btnSecondary}>Leaderboard</button>
+          <button onClick={onBracket} style={s.btnSecondary}>Bracket</button>
           <button onClick={() => setShowRules(true)} style={{
             ...s.btnSecondary, borderColor: "rgba(255,255,255,0.1)", color: "#94a3b8", fontSize: 14,
           }}>Rules</button>
@@ -1047,7 +1076,7 @@ function EliminatedView({ poolId, player, picks, matchups, onBack }) {
   if (showLeaderboard && leaderboard) {
     return (
       <div style={s.page}>
-        <button onClick={() => setShowLeaderboard(false)} style={s.backBtn}>&#8592; Back to Results</button>
+        <button onClick={() => setShowLeaderboard(false)} style={s.backBtn}>&#9664; Results</button>
         <div style={{ maxWidth: 600, margin: "0 auto" }}>
           <h2 style={{ color: "#fff", fontSize: 28, margin: "0 0 8px 0" }}>Leaderboard</h2>
           <p style={{ color: "#64748b", fontSize: 14, margin: "0 0 24px 0" }}>
@@ -1091,7 +1120,7 @@ function EliminatedView({ poolId, player, picks, matchups, onBack }) {
 
   return (
     <div style={s.page}>
-      <button onClick={onBack} style={s.backBtn}>&#8592; Back to Pool</button>
+      <button onClick={onBack} style={s.backBtn}>&#9664; Pool</button>
       <div style={{ maxWidth: 500, margin: "0 auto" }}>
         <div style={{ textAlign: "center", marginBottom: 24 }}>
           <div style={{ fontSize: 64 }}>{"\u{1F480}"}</div>
@@ -1538,7 +1567,7 @@ function PlayView({ poolId, player, onBack, onLiveScores }) {
 
   return (
     <div style={s.page}>
-      <button onClick={onBack} style={s.backBtn}>&#8592; Back to Pool</button>
+      <button onClick={onBack} style={s.backBtn}>&#9664; Pool</button>
 
       {/* Round header */}
       <div style={{ textAlign: "center", marginBottom: 20 }}>
@@ -1865,7 +1894,7 @@ function LiveScoresView({ poolId, player, currentRound, picks: propPicks, onBack
 
   return (
     <div style={s.page}>
-      <button onClick={onBack} style={s.backBtn}>&#8592; Back to Pool</button>
+      <button onClick={onBack} style={s.backBtn}>&#9664; Pool</button>
       <div style={{ maxWidth: 700, margin: "0 auto" }}>
         <div style={{ textAlign: "center", marginBottom: 20 }}>
           <h2 style={{ color: "#fff", fontSize: 28, margin: "0 0 4px 0" }}>
@@ -2096,7 +2125,7 @@ function LeaderboardView({ poolId, player: currentPlayer, onBack }) {
   return (
     <div style={s.page}>
       {showConfetti && <Confetti />}
-      <button onClick={onBack} style={s.backBtn}>&#8592; Back</button>
+      <button onClick={onBack} style={s.backBtn}>&#9664; Back</button>
       <div style={{ maxWidth: 640, margin: "0 auto" }}>
 
         {/* Winner / All-Eliminated Banner */}
@@ -2439,7 +2468,7 @@ function AdminView({ poolId, onBack }) {
   if (!authed) {
     return (
       <div style={s.page}>
-        <button onClick={onBack} style={s.backBtn}>&#8592; Back</button>
+        <button onClick={onBack} style={s.backBtn}>&#9664; Back</button>
         <div style={{ maxWidth: 400, margin: "60px auto 0" }}>
           <h2 style={{ color: "#fff", fontSize: 28, margin: "0 0 24px 0" }}>Admin Access</h2>
           <div style={{ display: "flex", gap: 8 }}>
@@ -2460,7 +2489,7 @@ function AdminView({ poolId, onBack }) {
 
   return (
     <div style={s.page}>
-      <button onClick={onBack} style={s.backBtn}>&#8592; Back</button>
+      <button onClick={onBack} style={s.backBtn}>&#9664; Back</button>
       <div style={{ maxWidth: 900, margin: "0 auto" }}>
         <h2 style={{ color: "#fff", fontSize: 28, margin: "0 0 8px 0" }}>Admin Panel</h2>
         <p style={{ color: "#64748b", fontSize: 14, margin: "0 0 16px 0" }}>
@@ -2543,6 +2572,208 @@ function AdminView({ poolId, onBack }) {
             backgroundColor: "rgba(255,255,255,0.05)", color: "#e2e8f0", fontSize: 14,
           }}>{message}</div>
         )}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// BRACKET VIEW
+// ============================================================
+
+function BracketView({ poolId, onBack }) {
+  const [activeRegion, setActiveRegion] = useState("East");
+  const [allResults, setAllResults] = useState([]);
+
+  useEffect(() => {
+    api(`/pools/${poolId}/results`).then(setAllResults);
+  }, [poolId]);
+
+  // Build all rounds of matchups
+  const roundNames = ["Round of 32", "Sweet 16", "Elite 8", "Final Four", "Championship"];
+  const allRounds = [];
+  for (let i = 0; i < 5; i++) {
+    allRounds.push(buildMatchupsForRound(i, allResults));
+  }
+
+  // For region tabs: show R32 -> S16 -> E8 for each region
+  const regionRounds = [
+    { idx: 0, label: "R32", name: "Round of 32" },
+    { idx: 1, label: "S16", name: "Sweet 16" },
+    { idx: 2, label: "E8", name: "Elite 8" },
+  ];
+
+  function getRegionMatchups(roundIdx, region) {
+    const matchups = allRounds[roundIdx];
+    if (!matchups) return [];
+    if (matchups[region]) return matchups[region];
+    // For rounds with combined regions, filter
+    if (Array.isArray(matchups)) return matchups;
+    return Object.values(matchups).flat();
+  }
+
+  function TeamSlot({ team, small }) {
+    if (!team || team.name === "TBD") {
+      return (
+        <div style={{
+          display: "flex", alignItems: "center", gap: 6, padding: small ? "4px 8px" : "6px 10px",
+          backgroundColor: "rgba(255,255,255,0.03)", borderRadius: 6,
+          border: "1px dashed rgba(255,255,255,0.1)",
+        }}>
+          <span style={{ color: "#475569", fontSize: small ? 11 : 13, fontStyle: "italic" }}>TBD</span>
+        </div>
+      );
+    }
+    const color = getTeamColor(team.name);
+    return (
+      <div style={{
+        display: "flex", alignItems: "center", gap: 6, padding: small ? "4px 8px" : "6px 10px",
+        backgroundColor: "rgba(255,255,255,0.05)", borderRadius: 6,
+        border: "1px solid rgba(255,255,255,0.08)",
+      }}>
+        <JerseyBadge seed={team.seed} teamName={team.name} />
+        <span style={{ color: "#e2e8f0", fontSize: small ? 11 : 13, fontWeight: 600 }}>{team.name}</span>
+        <span style={{ color: "#475569", fontSize: small ? 9 : 10, marginLeft: "auto" }}>{team.seed}</span>
+      </div>
+    );
+  }
+
+  function MatchupCard({ matchup, compact }) {
+    return (
+      <div style={{
+        backgroundColor: "rgba(255,255,255,0.03)", borderRadius: 8,
+        border: "1px solid rgba(255,255,255,0.06)", padding: compact ? 6 : 8,
+        display: "flex", flexDirection: "column", gap: 3,
+      }}>
+        <TeamSlot team={matchup.teamA} small={compact} />
+        <div style={{ textAlign: "center", color: "#334155", fontSize: 9, fontWeight: 700, letterSpacing: 1 }}>VS</div>
+        <TeamSlot team={matchup.teamB} small={compact} />
+      </div>
+    );
+  }
+
+  // Region bracket tree: R32 (4 matchups) -> S16 (2) -> E8 (1)
+  function RegionBracket({ region }) {
+    const r32 = getRegionMatchups(0, region);
+    const s16 = getRegionMatchups(1, region);
+    const e8 = getRegionMatchups(2, region);
+
+    return (
+      <div style={{ display: "flex", gap: 12, overflowX: "auto", paddingBottom: 8, WebkitOverflowScrolling: "touch" }}>
+        {/* R32 column */}
+        <div style={{ minWidth: 160, flex: "0 0 auto" }}>
+          <div style={{ color: "#64748b", fontSize: 10, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8, textAlign: "center" }}>
+            Round of 32
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {r32.map((m, i) => <MatchupCard key={i} matchup={m} compact />)}
+          </div>
+        </div>
+        {/* S16 column */}
+        <div style={{ minWidth: 160, flex: "0 0 auto", display: "flex", flexDirection: "column", justifyContent: "center" }}>
+          <div style={{ color: "#64748b", fontSize: 10, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8, textAlign: "center" }}>
+            Sweet 16
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 24, justifyContent: "center", flex: 1 }}>
+            {s16.map((m, i) => <MatchupCard key={i} matchup={m} compact />)}
+          </div>
+        </div>
+        {/* E8 column */}
+        <div style={{ minWidth: 160, flex: "0 0 auto", display: "flex", flexDirection: "column", justifyContent: "center" }}>
+          <div style={{ color: "#64748b", fontSize: 10, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8, textAlign: "center" }}>
+            Elite 8
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", justifyContent: "center", flex: 1 }}>
+            {e8.length > 0 ? e8.map((m, i) => <MatchupCard key={i} matchup={m} />) : (
+              <div style={{ color: "#334155", fontSize: 12, textAlign: "center", fontStyle: "italic" }}>Awaiting results</div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Final Four + Championship
+  function FinalRounds() {
+    const f4 = allRounds[3] || {};
+    const champ = allRounds[4] || {};
+    const f4Matchups = f4.Final4 ? [{ teamA: f4.Final4[0]?.teamA || { name: "TBD", seed: 0 }, teamB: f4.Final4[0]?.teamB || { name: "TBD", seed: 0 } }] : [];
+    const champMatchups = champ.Championship ? [{ teamA: champ.Championship[0]?.teamA || { name: "TBD", seed: 0 }, teamB: champ.Championship[0]?.teamB || { name: "TBD", seed: 0 } }] : [];
+
+    // Grab all F4 matchups from any grouping
+    const allF4 = Object.values(f4).flat();
+    const allChamp = Object.values(champ).flat();
+
+    return (
+      <div style={{ marginTop: 16 }}>
+        <div style={{
+          padding: "10px 14px", borderRadius: "8px 8px 0 0",
+          background: "linear-gradient(135deg, rgba(249,115,22,0.15), rgba(239,68,68,0.12))",
+          borderBottom: "1px solid rgba(249,115,22,0.2)",
+          textAlign: "center",
+        }}>
+          <span style={{ color: "#f97316", fontSize: 13, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1 }}>Final Four & Championship</span>
+        </div>
+        <div style={{
+          backgroundColor: "rgba(255,255,255,0.02)", borderRadius: "0 0 8px 8px",
+          padding: 12, border: "1px solid rgba(255,255,255,0.05)", borderTop: "none",
+        }}>
+          {allF4.length > 0 ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: allChamp.length > 0 ? 16 : 0 }}>
+              <div style={{ color: "#64748b", fontSize: 10, textTransform: "uppercase", letterSpacing: 1, textAlign: "center" }}>Final Four</div>
+              {allF4.map((m, i) => <MatchupCard key={i} matchup={m} />)}
+            </div>
+          ) : (
+            <div style={{ color: "#334155", fontSize: 12, textAlign: "center", fontStyle: "italic", padding: 12 }}>
+              Final Four matchups set after Elite 8
+            </div>
+          )}
+          {allChamp.length > 0 && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <div style={{ color: "#64748b", fontSize: 10, textTransform: "uppercase", letterSpacing: 1, textAlign: "center" }}>Championship</div>
+              {allChamp.map((m, i) => <MatchupCard key={i} matchup={m} />)}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  const regionColors = { East: "#2563eb", South: "#dc2626", West: "#059669", Midwest: "#7c3aed" };
+
+  return (
+    <div style={s.page}>
+      <button onClick={onBack} style={s.backBtn}>&#9664; Pool</button>
+      <div style={{ maxWidth: 520, margin: "0 auto" }}>
+        <h2 style={{ color: "#fff", fontSize: 22, margin: "0 0 16px 0", textAlign: "center" }}>
+          Tournament Bracket
+        </h2>
+
+        {/* Region tabs */}
+        <div style={{ display: "flex", gap: 4, marginBottom: 16 }}>
+          {REGIONS.map((r) => (
+            <button key={r} onClick={() => setActiveRegion(r)} style={{
+              flex: 1, padding: "10px 4px", borderRadius: 8, border: "none", cursor: "pointer",
+              fontSize: 13, fontWeight: 700, transition: "all 0.15s ease",
+              backgroundColor: activeRegion === r ? regionColors[r] : "rgba(255,255,255,0.05)",
+              color: activeRegion === r ? "#fff" : "#64748b",
+              boxShadow: activeRegion === r ? `0 0 12px ${regionColors[r]}40` : "none",
+            }}>
+              {r}
+            </button>
+          ))}
+        </div>
+
+        {/* Region bracket */}
+        <div style={{
+          backgroundColor: "rgba(255,255,255,0.02)", borderRadius: 12,
+          border: "1px solid rgba(255,255,255,0.06)", padding: 12,
+        }}>
+          <RegionBracket region={activeRegion} />
+        </div>
+
+        {/* Final Four section */}
+        <FinalRounds />
       </div>
     </div>
   );
@@ -2646,6 +2877,7 @@ export default function App() {
           player={player}
           onPlay={() => setView("play")}
           onLeaderboard={() => setView("leaderboard")}
+          onBracket={() => setView("bracket")}
           onAdmin={() => setView("admin")}
           onLiveScores={(round) => { setLiveScoresRound(round); setView("live"); }}
           onLogout={logout}
@@ -2678,6 +2910,14 @@ export default function App() {
         <LeaderboardView
           poolId={poolId}
           player={player}
+          onBack={() => setView("lobby")}
+        />
+      );
+
+    case "bracket":
+      return (
+        <BracketView
+          poolId={poolId}
           onBack={() => setView("lobby")}
         />
       );
