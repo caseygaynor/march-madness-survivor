@@ -828,7 +828,7 @@ function JoinPoolView({ onBack, onJoined, initialCode }) {
   );
 }
 
-function PoolLobby({ poolId, player, onPlay, onLeaderboard, onAdmin, onLiveScores, onBracket, onLogout }) {
+function PoolLobby({ poolId, player, onPlay, onLeaderboard, onAdmin, onLiveScores, onLogout }) {
   const [pool, setPool] = useState(null);
   const [playerPicks, setPlayerPicks] = useState(null);
   const [currentRound, setCurrentRound] = useState(0);
@@ -891,7 +891,15 @@ function PoolLobby({ poolId, player, onPlay, onLeaderboard, onAdmin, onLiveScore
     <div style={{ ...s.page, ...s.center }}>
       <div style={{ textAlign: "center", maxWidth: 500 }}>
         {/* Hero */}
-        <h1 style={{ color: "#fff", fontSize: 36, fontWeight: 800, margin: "0 0 2px 0", lineHeight: 1.1 }}>
+        <h1 style={{
+          fontFamily: "'Anton', sans-serif", fontSize: 44, fontWeight: 400,
+          margin: "0 0 2px 0", lineHeight: 1.05, letterSpacing: 2,
+          textTransform: "uppercase",
+          background: "linear-gradient(180deg, #ffffff 30%, #94a3b8 100%)",
+          WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent",
+          textShadow: "0 0 40px rgba(249,115,22,0.15)",
+          filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.3))",
+        }}>
           Welcome to March
         </h1>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, marginBottom: 6 }}>
@@ -974,7 +982,6 @@ function PoolLobby({ poolId, player, onPlay, onLeaderboard, onAdmin, onLiveScore
             }}>Live Scores</button>
           )}
           <button onClick={onLeaderboard} style={s.btnSecondary}>Leaderboard</button>
-          <button onClick={onBracket} style={s.btnSecondary}>Bracket</button>
           <button onClick={() => setShowRules(true)} style={{
             ...s.btnSecondary, borderColor: "rgba(255,255,255,0.1)", color: "#94a3b8", fontSize: 14,
           }}>Rules</button>
@@ -1336,6 +1343,7 @@ function FutureRoundPreview({ roundIdx, onBack }) {
 
 function PlayView({ poolId, player, onBack, onLiveScores }) {
   const [picks, setPicks] = useState({}); // { "East-0": "Duke", ... }
+  const [allPlayerPicks, setAllPlayerPicks] = useState([]); // all picks across all rounds
   const [usedTeams, setUsedTeams] = useState([]);
   const [currentRoundLockedTeams, setCurrentRoundLockedTeams] = useState([]);
   const [lockedRounds, setLockedRounds] = useState([]);
@@ -1347,6 +1355,7 @@ function PlayView({ poolId, player, onBack, onLiveScores }) {
   const [currentRound, setCurrentRound] = useState(0);
   const [allResults, setAllResults] = useState([]);
   const [matchups, setMatchups] = useState(null);
+  const [activeTab, setActiveTab] = useState("picks"); // "picks" or "bracket"
 
   const config = ROUND_CONFIG[currentRound];
   const { timeLeft, expired: deadlinePassed } = useCountdown(config?.lockTime || "2099-01-01");
@@ -1361,6 +1370,7 @@ function PlayView({ poolId, player, onBack, onLiveScores }) {
       ]);
       setUsedTeams(used);
       setAllResults(poolResults);
+      setAllPlayerPicks(allPicks);
 
       const round = roundData.currentRound ?? 0;
       setCurrentRound(round);
@@ -1565,10 +1575,48 @@ function PlayView({ poolId, player, onBack, onLiveScores }) {
     );
   }
 
+  // Build player's picks map by round for bracket view
+  const playerPicksByRound = {};
+  for (const p of allPlayerPicks) {
+    if (!playerPicksByRound[p.round]) playerPicksByRound[p.round] = [];
+    playerPicksByRound[p.round].push(p);
+  }
+  // Also include current unsaved picks
+  const currentPickTeams = Object.values(picks).filter(Boolean);
+
   return (
     <div style={s.page}>
       <button onClick={onBack} style={s.backBtn}>&#9664; Pool</button>
 
+      {/* Picks / Bracket tab toggle */}
+      <div style={{ display: "flex", justifyContent: "center", gap: 4, marginBottom: 20 }}>
+        <button onClick={() => setActiveTab("picks")} style={{
+          padding: "10px 24px", borderRadius: 20, border: "none", cursor: "pointer",
+          fontSize: 14, fontWeight: 700, transition: "all 0.15s ease",
+          backgroundColor: activeTab === "picks" ? "rgba(249,115,22,0.2)" : "rgba(255,255,255,0.05)",
+          color: activeTab === "picks" ? "#f97316" : "#64748b",
+          boxShadow: activeTab === "picks" ? "0 0 12px rgba(249,115,22,0.15)" : "none",
+        }}>Make Picks</button>
+        <button onClick={() => setActiveTab("bracket")} style={{
+          padding: "10px 24px", borderRadius: 20, border: "none", cursor: "pointer",
+          fontSize: 14, fontWeight: 700, transition: "all 0.15s ease",
+          backgroundColor: activeTab === "bracket" ? "rgba(249,115,22,0.2)" : "rgba(255,255,255,0.05)",
+          color: activeTab === "bracket" ? "#f97316" : "#64748b",
+          boxShadow: activeTab === "bracket" ? "0 0 12px rgba(249,115,22,0.15)" : "none",
+        }}>My Bracket</button>
+      </div>
+
+      {activeTab === "bracket" ? (
+        <PlayerBracketView
+          poolId={poolId}
+          allResults={allResults}
+          playerPicksByRound={playerPicksByRound}
+          currentPickTeams={currentPickTeams}
+          usedTeams={usedTeams}
+          currentRound={currentRound}
+        />
+      ) : (
+      <>
       {/* Round header */}
       <div style={{ textAlign: "center", marginBottom: 20 }}>
         <div style={{ display: "flex", justifyContent: "center", gap: 6, marginBottom: 16, flexWrap: "wrap" }}>
@@ -1817,6 +1865,315 @@ function PlayView({ poolId, player, onBack, onLiveScores }) {
       )}
       </>
       )}
+      </>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// PLAYER BRACKET VIEW - Shows personalized bracket with picks & results
+// ============================================================
+
+function PlayerBracketView({ poolId, allResults, playerPicksByRound, currentPickTeams, usedTeams, currentRound }) {
+  const [activeRegion, setActiveRegion] = useState("East");
+
+  // Build all rounds of matchups
+  const allRounds = [];
+  for (let i = 0; i < 5; i++) {
+    allRounds.push(buildMatchupsForRound(i, allResults));
+  }
+
+  // Collect all picked teams across all rounds
+  const allPickedTeams = new Set();
+  for (const round of Object.values(playerPicksByRound)) {
+    for (const p of round) allPickedTeams.add(p.team);
+  }
+  // Include current unsaved picks
+  for (const t of currentPickTeams) allPickedTeams.add(t);
+
+  // Build results map for checking winners
+  const resultMap = {};
+  for (const r of allResults) {
+    resultMap[`r${r.round}-${r.region}-${r.matchup_idx}`] = r.winner;
+  }
+
+  // Check if a team won their game in a specific round
+  function getTeamResult(teamName, roundIdx, region, matchupIdx) {
+    const key = `r${roundIdx}-${region}-${matchupIdx}`;
+    const winner = resultMap[key];
+    if (!winner) return null; // no result yet
+    return winner === teamName ? "won" : "lost";
+  }
+
+  // Check if a team is picked in a specific round
+  function isPickedInRound(teamName, roundIdx) {
+    const roundPicks = playerPicksByRound[roundIdx];
+    if (!roundPicks) return false;
+    return roundPicks.some((p) => p.team === teamName);
+  }
+
+  function BracketTeamSlot({ team, roundIdx, region, matchupIdx, matchup }) {
+    if (!team || team.name === "TBD") {
+      return (
+        <div style={{
+          display: "flex", alignItems: "center", gap: 6, padding: "5px 8px",
+          backgroundColor: "rgba(255,255,255,0.02)", borderRadius: 6,
+          border: "1px dashed rgba(255,255,255,0.08)", minHeight: 32,
+        }}>
+          <span style={{ color: "#334155", fontSize: 11, fontStyle: "italic" }}>TBD</span>
+        </div>
+      );
+    }
+
+    const isPicked = isPickedInRound(team.name, roundIdx) || (roundIdx === currentRound && currentPickTeams.includes(team.name));
+    const isUsed = usedTeams.includes(team.name) && !isPicked;
+    const teamColor = getTeamColor(team.name);
+    const hasColor = teamColor !== "#64748b";
+
+    // Check result if this round has been graded
+    const resultKey = `r${roundIdx}-${region}-${matchupIdx}`;
+    const winner = resultMap[resultKey];
+    const teamWon = winner === team.name;
+    const teamLost = winner && winner !== team.name;
+
+    function hexToRgba(hex, alpha) {
+      const r = parseInt(hex.slice(1, 3), 16);
+      const g = parseInt(hex.slice(3, 5), 16);
+      const b = parseInt(hex.slice(5, 7), 16);
+      return `rgba(${r},${g},${b},${alpha})`;
+    }
+
+    let borderStyle = "1px solid rgba(255,255,255,0.06)";
+    let bgStyle = "rgba(255,255,255,0.03)";
+    let glowStyle = "none";
+    let opacityStyle = 1;
+    let statusIcon = null;
+
+    if (isPicked && teamWon) {
+      // Picked and won!
+      borderStyle = `1.5px solid #22c55e`;
+      bgStyle = "rgba(34,197,94,0.1)";
+      glowStyle = "0 0 8px rgba(34,197,94,0.3)";
+      statusIcon = <span style={{ color: "#22c55e", fontSize: 11, fontWeight: 700 }}>&#10003;</span>;
+    } else if (isPicked && teamLost) {
+      // Picked and lost
+      borderStyle = `1.5px solid rgba(239,68,68,0.4)`;
+      bgStyle = "rgba(239,68,68,0.08)";
+      statusIcon = <span style={{ color: "#ef4444", fontSize: 11, fontWeight: 700 }}>&#10005;</span>;
+    } else if (isPicked) {
+      // Picked, game pending
+      borderStyle = hasColor ? `1.5px solid ${teamColor}` : "1.5px solid #f97316";
+      bgStyle = hasColor ? hexToRgba(teamColor, 0.1) : "rgba(249,115,22,0.1)";
+      glowStyle = hasColor ? `0 0 8px ${hexToRgba(teamColor, 0.25)}` : "0 0 8px rgba(249,115,22,0.2)";
+      statusIcon = <span style={{ fontSize: 9, color: "#f97316" }}>{"\u{1F3C0}"}</span>;
+    } else if (isUsed) {
+      opacityStyle = 0.35;
+    } else if (teamLost) {
+      opacityStyle = 0.3;
+      borderStyle = "1px solid rgba(255,255,255,0.03)";
+    }
+
+    return (
+      <div style={{
+        display: "flex", alignItems: "center", gap: 5, padding: "4px 7px",
+        backgroundColor: bgStyle, borderRadius: 6, border: borderStyle,
+        boxShadow: glowStyle, opacity: opacityStyle, minHeight: 30,
+        transition: "all 0.2s ease",
+      }}>
+        <JerseyBadge seed={team.seed} teamName={team.name} />
+        <span style={{ color: "#e2e8f0", fontSize: 11, fontWeight: isPicked ? 700 : 500, flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+          {team.name}
+        </span>
+        {statusIcon}
+      </div>
+    );
+  }
+
+  function BracketMatchup({ matchup, roundIdx, region, matchupIdx, compact }) {
+    return (
+      <div style={{
+        backgroundColor: "rgba(255,255,255,0.02)", borderRadius: 6,
+        border: "1px solid rgba(255,255,255,0.04)", padding: compact ? 4 : 5,
+        display: "flex", flexDirection: "column", gap: 2,
+      }}>
+        <BracketTeamSlot team={matchup.teamA} roundIdx={roundIdx} region={region} matchupIdx={matchupIdx} matchup={matchup} />
+        <BracketTeamSlot team={matchup.teamB} roundIdx={roundIdx} region={region} matchupIdx={matchupIdx} matchup={matchup} />
+      </div>
+    );
+  }
+
+  function RegionBracket({ region }) {
+    const r32 = allRounds[0]?.[region] || [];
+    const s16 = allRounds[1]?.[region] || [];
+    const e8 = allRounds[2]?.[region] || [];
+
+    return (
+      <div style={{ display: "flex", gap: 10, overflowX: "auto", paddingBottom: 8, WebkitOverflowScrolling: "touch" }}>
+        {/* R32 */}
+        <div style={{ minWidth: 155, flex: "0 0 auto" }}>
+          <div style={{ color: "#475569", fontSize: 9, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6, textAlign: "center", fontWeight: 700 }}>
+            Round of 32
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {r32.map((m, i) => <BracketMatchup key={i} matchup={m} roundIdx={0} region={region} matchupIdx={i} compact />)}
+          </div>
+        </div>
+        {/* S16 */}
+        <div style={{ minWidth: 155, flex: "0 0 auto", display: "flex", flexDirection: "column" }}>
+          <div style={{ color: "#475569", fontSize: 9, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6, textAlign: "center", fontWeight: 700 }}>
+            Sweet 16
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 16, justifyContent: "space-around", flex: 1 }}>
+            {s16.length > 0 ? s16.map((m, i) => <BracketMatchup key={i} matchup={m} roundIdx={1} region={region} matchupIdx={i} />) : (
+              <div style={{ color: "#1e293b", fontSize: 11, textAlign: "center", fontStyle: "italic" }}>Awaiting R32</div>
+            )}
+          </div>
+        </div>
+        {/* E8 */}
+        <div style={{ minWidth: 155, flex: "0 0 auto", display: "flex", flexDirection: "column" }}>
+          <div style={{ color: "#475569", fontSize: 9, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6, textAlign: "center", fontWeight: 700 }}>
+            Elite 8
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", justifyContent: "center", flex: 1 }}>
+            {e8.length > 0 ? e8.map((m, i) => <BracketMatchup key={i} matchup={m} roundIdx={2} region={region} matchupIdx={i} />) : (
+              <div style={{ color: "#1e293b", fontSize: 11, textAlign: "center", fontStyle: "italic" }}>Awaiting S16</div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Legend
+  function BracketLegend() {
+    return (
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 12, justifyContent: "center", marginBottom: 16 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+          <span style={{ width: 10, height: 10, borderRadius: 3, backgroundColor: "rgba(249,115,22,0.3)", border: "1.5px solid #f97316" }} />
+          <span style={{ color: "#64748b", fontSize: 10 }}>Your pick</span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+          <span style={{ width: 10, height: 10, borderRadius: 3, backgroundColor: "rgba(34,197,94,0.3)", border: "1.5px solid #22c55e" }} />
+          <span style={{ color: "#64748b", fontSize: 10 }}>Won</span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+          <span style={{ width: 10, height: 10, borderRadius: 3, backgroundColor: "rgba(239,68,68,0.2)", border: "1.5px solid rgba(239,68,68,0.4)" }} />
+          <span style={{ color: "#64748b", fontSize: 10 }}>Lost</span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+          <span style={{ width: 10, height: 10, borderRadius: 3, backgroundColor: "rgba(255,255,255,0.03)", opacity: 0.35 }} />
+          <span style={{ color: "#64748b", fontSize: 10 }}>Used</span>
+        </div>
+      </div>
+    );
+  }
+
+  // Final Four + Championship
+  function FinalRounds() {
+    const f4 = allRounds[3] || {};
+    const champ = allRounds[4] || {};
+    const allF4 = Object.values(f4).flat();
+    const allChamp = Object.values(champ).flat();
+
+    return (
+      <div style={{ marginTop: 16 }}>
+        <div style={{
+          padding: "8px 14px", borderRadius: "8px 8px 0 0",
+          background: "linear-gradient(135deg, rgba(249,115,22,0.12), rgba(239,68,68,0.1))",
+          borderBottom: "1px solid rgba(249,115,22,0.15)",
+          textAlign: "center",
+        }}>
+          <span style={{ color: "#f97316", fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1 }}>Final Four & Championship</span>
+        </div>
+        <div style={{
+          backgroundColor: "rgba(255,255,255,0.02)", borderRadius: "0 0 8px 8px",
+          padding: 10, border: "1px solid rgba(255,255,255,0.04)", borderTop: "none",
+        }}>
+          {allF4.length > 0 ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: allChamp.length > 0 ? 12 : 0 }}>
+              <div style={{ color: "#475569", fontSize: 9, textTransform: "uppercase", letterSpacing: 1, textAlign: "center", fontWeight: 700 }}>Final Four</div>
+              {allF4.map((m, i) => <BracketMatchup key={i} matchup={m} roundIdx={3} region="Final4" matchupIdx={i} />)}
+            </div>
+          ) : (
+            <div style={{ color: "#1e293b", fontSize: 11, textAlign: "center", fontStyle: "italic", padding: 8 }}>
+              Matchups set after Elite 8
+            </div>
+          )}
+          {allChamp.length > 0 && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <div style={{ color: "#475569", fontSize: 9, textTransform: "uppercase", letterSpacing: 1, textAlign: "center", fontWeight: 700 }}>Championship</div>
+              {allChamp.map((m, i) => <BracketMatchup key={i} matchup={m} roundIdx={4} region="Championship" matchupIdx={i} />)}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // Count available teams (not yet picked, still in tournament)
+  const allTeamsInBracket = new Set();
+  for (const region of REGIONS) {
+    const r32 = allRounds[0]?.[region] || [];
+    for (const m of r32) {
+      if (m.teamA?.name && m.teamA.name !== "TBD") allTeamsInBracket.add(m.teamA.name);
+      if (m.teamB?.name && m.teamB.name !== "TBD") allTeamsInBracket.add(m.teamB.name);
+    }
+  }
+  const availableTeams = [...allTeamsInBracket].filter((t) => !allPickedTeams.has(t));
+
+  const regionColors = { East: "#2563eb", South: "#dc2626", West: "#059669", Midwest: "#7c3aed" };
+
+  return (
+    <div style={{ maxWidth: 520, margin: "0 auto" }}>
+      {/* Stats bar */}
+      <div style={{
+        display: "flex", justifyContent: "center", gap: 16, marginBottom: 14,
+        padding: "8px 12px", borderRadius: 10,
+        backgroundColor: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)",
+      }}>
+        <div style={{ textAlign: "center" }}>
+          <div style={{ color: "#f97316", fontSize: 18, fontWeight: 800 }}>{allPickedTeams.size}</div>
+          <div style={{ color: "#475569", fontSize: 9, textTransform: "uppercase", letterSpacing: 0.5 }}>Used</div>
+        </div>
+        <div style={{ width: 1, backgroundColor: "rgba(255,255,255,0.06)" }} />
+        <div style={{ textAlign: "center" }}>
+          <div style={{ color: "#22c55e", fontSize: 18, fontWeight: 800 }}>{availableTeams.length}</div>
+          <div style={{ color: "#475569", fontSize: 9, textTransform: "uppercase", letterSpacing: 0.5 }}>Available</div>
+        </div>
+        <div style={{ width: 1, backgroundColor: "rgba(255,255,255,0.06)" }} />
+        <div style={{ textAlign: "center" }}>
+          <div style={{ color: "#64748b", fontSize: 18, fontWeight: 800 }}>{5 - currentRound}</div>
+          <div style={{ color: "#475569", fontSize: 9, textTransform: "uppercase", letterSpacing: 0.5 }}>Rounds Left</div>
+        </div>
+      </div>
+
+      <BracketLegend />
+
+      {/* Region tabs */}
+      <div style={{ display: "flex", gap: 4, marginBottom: 14 }}>
+        {REGIONS.map((r) => (
+          <button key={r} onClick={() => setActiveRegion(r)} style={{
+            flex: 1, padding: "8px 4px", borderRadius: 8, border: "none", cursor: "pointer",
+            fontSize: 12, fontWeight: 700, transition: "all 0.15s ease",
+            backgroundColor: activeRegion === r ? regionColors[r] : "rgba(255,255,255,0.04)",
+            color: activeRegion === r ? "#fff" : "#475569",
+            boxShadow: activeRegion === r ? `0 0 10px ${regionColors[r]}40` : "none",
+          }}>
+            {r}
+          </button>
+        ))}
+      </div>
+
+      {/* Region bracket */}
+      <div style={{
+        backgroundColor: "rgba(255,255,255,0.01)", borderRadius: 10,
+        border: "1px solid rgba(255,255,255,0.05)", padding: 10,
+      }}>
+        <RegionBracket region={activeRegion} />
+      </div>
+
+      <FinalRounds />
     </div>
   );
 }
@@ -2578,208 +2935,6 @@ function AdminView({ poolId, onBack }) {
 }
 
 // ============================================================
-// BRACKET VIEW
-// ============================================================
-
-function BracketView({ poolId, onBack }) {
-  const [activeRegion, setActiveRegion] = useState("East");
-  const [allResults, setAllResults] = useState([]);
-
-  useEffect(() => {
-    api(`/pools/${poolId}/results`).then(setAllResults);
-  }, [poolId]);
-
-  // Build all rounds of matchups
-  const roundNames = ["Round of 32", "Sweet 16", "Elite 8", "Final Four", "Championship"];
-  const allRounds = [];
-  for (let i = 0; i < 5; i++) {
-    allRounds.push(buildMatchupsForRound(i, allResults));
-  }
-
-  // For region tabs: show R32 -> S16 -> E8 for each region
-  const regionRounds = [
-    { idx: 0, label: "R32", name: "Round of 32" },
-    { idx: 1, label: "S16", name: "Sweet 16" },
-    { idx: 2, label: "E8", name: "Elite 8" },
-  ];
-
-  function getRegionMatchups(roundIdx, region) {
-    const matchups = allRounds[roundIdx];
-    if (!matchups) return [];
-    if (matchups[region]) return matchups[region];
-    // For rounds with combined regions, filter
-    if (Array.isArray(matchups)) return matchups;
-    return Object.values(matchups).flat();
-  }
-
-  function TeamSlot({ team, small }) {
-    if (!team || team.name === "TBD") {
-      return (
-        <div style={{
-          display: "flex", alignItems: "center", gap: 6, padding: small ? "4px 8px" : "6px 10px",
-          backgroundColor: "rgba(255,255,255,0.03)", borderRadius: 6,
-          border: "1px dashed rgba(255,255,255,0.1)",
-        }}>
-          <span style={{ color: "#475569", fontSize: small ? 11 : 13, fontStyle: "italic" }}>TBD</span>
-        </div>
-      );
-    }
-    const color = getTeamColor(team.name);
-    return (
-      <div style={{
-        display: "flex", alignItems: "center", gap: 6, padding: small ? "4px 8px" : "6px 10px",
-        backgroundColor: "rgba(255,255,255,0.05)", borderRadius: 6,
-        border: "1px solid rgba(255,255,255,0.08)",
-      }}>
-        <JerseyBadge seed={team.seed} teamName={team.name} />
-        <span style={{ color: "#e2e8f0", fontSize: small ? 11 : 13, fontWeight: 600 }}>{team.name}</span>
-        <span style={{ color: "#475569", fontSize: small ? 9 : 10, marginLeft: "auto" }}>{team.seed}</span>
-      </div>
-    );
-  }
-
-  function MatchupCard({ matchup, compact }) {
-    return (
-      <div style={{
-        backgroundColor: "rgba(255,255,255,0.03)", borderRadius: 8,
-        border: "1px solid rgba(255,255,255,0.06)", padding: compact ? 6 : 8,
-        display: "flex", flexDirection: "column", gap: 3,
-      }}>
-        <TeamSlot team={matchup.teamA} small={compact} />
-        <div style={{ textAlign: "center", color: "#334155", fontSize: 9, fontWeight: 700, letterSpacing: 1 }}>VS</div>
-        <TeamSlot team={matchup.teamB} small={compact} />
-      </div>
-    );
-  }
-
-  // Region bracket tree: R32 (4 matchups) -> S16 (2) -> E8 (1)
-  function RegionBracket({ region }) {
-    const r32 = getRegionMatchups(0, region);
-    const s16 = getRegionMatchups(1, region);
-    const e8 = getRegionMatchups(2, region);
-
-    return (
-      <div style={{ display: "flex", gap: 12, overflowX: "auto", paddingBottom: 8, WebkitOverflowScrolling: "touch" }}>
-        {/* R32 column */}
-        <div style={{ minWidth: 160, flex: "0 0 auto" }}>
-          <div style={{ color: "#64748b", fontSize: 10, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8, textAlign: "center" }}>
-            Round of 32
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {r32.map((m, i) => <MatchupCard key={i} matchup={m} compact />)}
-          </div>
-        </div>
-        {/* S16 column */}
-        <div style={{ minWidth: 160, flex: "0 0 auto", display: "flex", flexDirection: "column", justifyContent: "center" }}>
-          <div style={{ color: "#64748b", fontSize: 10, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8, textAlign: "center" }}>
-            Sweet 16
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 24, justifyContent: "center", flex: 1 }}>
-            {s16.map((m, i) => <MatchupCard key={i} matchup={m} compact />)}
-          </div>
-        </div>
-        {/* E8 column */}
-        <div style={{ minWidth: 160, flex: "0 0 auto", display: "flex", flexDirection: "column", justifyContent: "center" }}>
-          <div style={{ color: "#64748b", fontSize: 10, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8, textAlign: "center" }}>
-            Elite 8
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", justifyContent: "center", flex: 1 }}>
-            {e8.length > 0 ? e8.map((m, i) => <MatchupCard key={i} matchup={m} />) : (
-              <div style={{ color: "#334155", fontSize: 12, textAlign: "center", fontStyle: "italic" }}>Awaiting results</div>
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Final Four + Championship
-  function FinalRounds() {
-    const f4 = allRounds[3] || {};
-    const champ = allRounds[4] || {};
-    const f4Matchups = f4.Final4 ? [{ teamA: f4.Final4[0]?.teamA || { name: "TBD", seed: 0 }, teamB: f4.Final4[0]?.teamB || { name: "TBD", seed: 0 } }] : [];
-    const champMatchups = champ.Championship ? [{ teamA: champ.Championship[0]?.teamA || { name: "TBD", seed: 0 }, teamB: champ.Championship[0]?.teamB || { name: "TBD", seed: 0 } }] : [];
-
-    // Grab all F4 matchups from any grouping
-    const allF4 = Object.values(f4).flat();
-    const allChamp = Object.values(champ).flat();
-
-    return (
-      <div style={{ marginTop: 16 }}>
-        <div style={{
-          padding: "10px 14px", borderRadius: "8px 8px 0 0",
-          background: "linear-gradient(135deg, rgba(249,115,22,0.15), rgba(239,68,68,0.12))",
-          borderBottom: "1px solid rgba(249,115,22,0.2)",
-          textAlign: "center",
-        }}>
-          <span style={{ color: "#f97316", fontSize: 13, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1 }}>Final Four & Championship</span>
-        </div>
-        <div style={{
-          backgroundColor: "rgba(255,255,255,0.02)", borderRadius: "0 0 8px 8px",
-          padding: 12, border: "1px solid rgba(255,255,255,0.05)", borderTop: "none",
-        }}>
-          {allF4.length > 0 ? (
-            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: allChamp.length > 0 ? 16 : 0 }}>
-              <div style={{ color: "#64748b", fontSize: 10, textTransform: "uppercase", letterSpacing: 1, textAlign: "center" }}>Final Four</div>
-              {allF4.map((m, i) => <MatchupCard key={i} matchup={m} />)}
-            </div>
-          ) : (
-            <div style={{ color: "#334155", fontSize: 12, textAlign: "center", fontStyle: "italic", padding: 12 }}>
-              Final Four matchups set after Elite 8
-            </div>
-          )}
-          {allChamp.length > 0 && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              <div style={{ color: "#64748b", fontSize: 10, textTransform: "uppercase", letterSpacing: 1, textAlign: "center" }}>Championship</div>
-              {allChamp.map((m, i) => <MatchupCard key={i} matchup={m} />)}
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  const regionColors = { East: "#2563eb", South: "#dc2626", West: "#059669", Midwest: "#7c3aed" };
-
-  return (
-    <div style={s.page}>
-      <button onClick={onBack} style={s.backBtn}>&#9664; Pool</button>
-      <div style={{ maxWidth: 520, margin: "0 auto" }}>
-        <h2 style={{ color: "#fff", fontSize: 22, margin: "0 0 16px 0", textAlign: "center" }}>
-          Tournament Bracket
-        </h2>
-
-        {/* Region tabs */}
-        <div style={{ display: "flex", gap: 4, marginBottom: 16 }}>
-          {REGIONS.map((r) => (
-            <button key={r} onClick={() => setActiveRegion(r)} style={{
-              flex: 1, padding: "10px 4px", borderRadius: 8, border: "none", cursor: "pointer",
-              fontSize: 13, fontWeight: 700, transition: "all 0.15s ease",
-              backgroundColor: activeRegion === r ? regionColors[r] : "rgba(255,255,255,0.05)",
-              color: activeRegion === r ? "#fff" : "#64748b",
-              boxShadow: activeRegion === r ? `0 0 12px ${regionColors[r]}40` : "none",
-            }}>
-              {r}
-            </button>
-          ))}
-        </div>
-
-        {/* Region bracket */}
-        <div style={{
-          backgroundColor: "rgba(255,255,255,0.02)", borderRadius: 12,
-          border: "1px solid rgba(255,255,255,0.06)", padding: 12,
-        }}>
-          <RegionBracket region={activeRegion} />
-        </div>
-
-        {/* Final Four section */}
-        <FinalRounds />
-      </div>
-    </div>
-  );
-}
-
-// ============================================================
 // MAIN APP - ROUTER
 // ============================================================
 
@@ -2877,7 +3032,6 @@ export default function App() {
           player={player}
           onPlay={() => setView("play")}
           onLeaderboard={() => setView("leaderboard")}
-          onBracket={() => setView("bracket")}
           onAdmin={() => setView("admin")}
           onLiveScores={(round) => { setLiveScoresRound(round); setView("live"); }}
           onLogout={logout}
@@ -2910,14 +3064,6 @@ export default function App() {
         <LeaderboardView
           poolId={poolId}
           player={player}
-          onBack={() => setView("lobby")}
-        />
-      );
-
-    case "bracket":
-      return (
-        <BracketView
-          poolId={poolId}
           onBack={() => setView("lobby")}
         />
       );
