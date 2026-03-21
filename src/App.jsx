@@ -1614,6 +1614,7 @@ function PlayView({ poolId, player, onBack, onLiveScores }) {
           currentPickTeams={currentPickTeams}
           usedTeams={usedTeams}
           currentRound={currentRound}
+          onSwitchToMakePicks={() => setActiveTab("picks")}
         />
       ) : (
       <>
@@ -1875,7 +1876,7 @@ function PlayView({ poolId, player, onBack, onLiveScores }) {
 // PLAYER BRACKET VIEW - Shows personalized bracket with picks & results
 // ============================================================
 
-function PlayerBracketView({ poolId, allResults, playerPicksByRound, currentPickTeams, usedTeams, currentRound }) {
+function PlayerBracketView({ poolId, allResults, playerPicksByRound, currentPickTeams, usedTeams, currentRound, onSwitchToMakePicks }) {
   const [activeRegion, setActiveRegion] = useState("East");
 
   // Build all rounds of matchups
@@ -1885,11 +1886,14 @@ function PlayerBracketView({ poolId, allResults, playerPicksByRound, currentPick
   }
 
   // Collect all picked teams across all rounds
+  // For the current round, use ONLY currentPickTeams (live state) not the server data
   const allPickedTeams = new Set();
-  for (const round of Object.values(playerPicksByRound)) {
-    for (const p of round) allPickedTeams.add(p.team);
+  for (const [roundStr, roundPicks] of Object.entries(playerPicksByRound)) {
+    const roundNum = parseInt(roundStr);
+    if (roundNum === currentRound) continue; // skip server data for current round
+    for (const p of roundPicks) allPickedTeams.add(p.team);
   }
-  // Include current unsaved picks
+  // Add live current round picks as the source of truth
   for (const t of currentPickTeams) allPickedTeams.add(t);
 
   // Build results map for checking winners
@@ -1908,6 +1912,10 @@ function PlayerBracketView({ poolId, allResults, playerPicksByRound, currentPick
 
   // Check if a team is picked in a specific round
   function isPickedInRound(teamName, roundIdx) {
+    if (roundIdx === currentRound) {
+      // Use live picks state for current round
+      return currentPickTeams.includes(teamName);
+    }
     const roundPicks = playerPicksByRound[roundIdx];
     if (!roundPicks) return false;
     return roundPicks.some((p) => p.team === teamName);
@@ -2196,12 +2204,15 @@ function PlayerBracketView({ poolId, allResults, playerPicksByRound, currentPick
 
       <FinalRounds />
 
-      {/* Edit note */}
-      <div style={{
-        textAlign: "center", marginTop: 20, paddingBottom: 20,
-        color: "#475569", fontSize: 11,
-      }}>
-        To edit your picks, switch to the <span style={{ color: "#f97316", fontWeight: 600 }}>Make Picks</span> tab above
+      {/* Edit picks button */}
+      <div style={{ textAlign: "center", marginTop: 20, paddingBottom: 20 }}>
+        <button onClick={onSwitchToMakePicks} style={{
+          background: "none", border: "1px solid rgba(249,115,22,0.25)", borderRadius: 20,
+          color: "#f97316", fontSize: 12, fontWeight: 600, padding: "8px 20px",
+          cursor: "pointer", transition: "all 0.15s ease",
+        }}>
+          Edit picks on Make Picks
+        </button>
       </div>
     </div>
   );
