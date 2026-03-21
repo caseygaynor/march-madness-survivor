@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 
 // ============================================================
 // BRACKET DATA: 2026 NCAA Tournament
@@ -248,26 +248,28 @@ const s = {
   page: {
     minHeight: "100vh",
     background: "linear-gradient(135deg, #0f172a 0%, #1e293b 100%)",
-    padding: 20,
+    padding: "16px env(safe-area-inset-right, 12px) 16px env(safe-area-inset-left, 12px)",
     fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+    boxSizing: "border-box",
   },
-  center: { display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", padding: 20 },
-  card: { backgroundColor: "rgba(255,255,255,0.05)", borderRadius: 12, padding: 20 },
+  center: { display: "flex", alignItems: "center", justifyContent: "center", minHeight: "100vh", padding: 16 },
+  card: { backgroundColor: "rgba(255,255,255,0.05)", borderRadius: 12, padding: "16px" },
   input: {
     flex: 1, padding: "12px 16px", borderRadius: 8, border: "2px solid #334155",
     backgroundColor: "#1e293b", color: "#fff", fontSize: 16, outline: "none",
+    minWidth: 0, // prevents flex overflow on mobile
   },
   btnPrimary: {
-    padding: "14px 32px", fontSize: 16, fontWeight: 700, borderRadius: 10,
+    padding: "14px 24px", fontSize: 16, fontWeight: 700, borderRadius: 10,
     border: "none", background: "linear-gradient(90deg, #f97316, #ef4444)",
-    color: "#fff", cursor: "pointer",
+    color: "#fff", cursor: "pointer", whiteSpace: "nowrap",
   },
   btnSecondary: {
-    padding: "14px 32px", fontSize: 16, fontWeight: 700, borderRadius: 10,
+    padding: "14px 24px", fontSize: 16, fontWeight: 700, borderRadius: 10,
     border: "2px solid rgba(255,255,255,0.2)", backgroundColor: "transparent",
-    color: "#fff", cursor: "pointer",
+    color: "#fff", cursor: "pointer", whiteSpace: "nowrap",
   },
-  backBtn: { background: "none", border: "none", color: "#94a3b8", cursor: "pointer", fontSize: 14, marginBottom: 20 },
+  backBtn: { background: "none", border: "none", color: "#94a3b8", cursor: "pointer", fontSize: 14, marginBottom: 16, padding: "4px 0" },
   regionColors: { East: "#3b82f6", South: "#ef4444", West: "#22c55e", Midwest: "#eab308" },
 };
 
@@ -494,7 +496,7 @@ function JoinPoolView({ onBack, onJoined, initialCode }) {
   );
 }
 
-function PoolLobby({ poolId, player, onPlay, onLeaderboard, onAdmin }) {
+function PoolLobby({ poolId, player, onPlay, onLeaderboard, onAdmin, onLiveScores, onLogout }) {
   const [pool, setPool] = useState(null);
   const [playerPicks, setPlayerPicks] = useState(null);
   const [currentRound, setCurrentRound] = useState(0);
@@ -609,16 +611,24 @@ function PoolLobby({ poolId, player, onPlay, onLeaderboard, onAdmin }) {
           </div>
         </div>
 
-        {shareUrl && (
-          <div style={{ marginBottom: 20 }}>
+        <div style={{ display: "flex", gap: 8, justifyContent: "center", marginBottom: 20 }}>
+          {shareUrl && (
             <button onClick={() => navigator.clipboard?.writeText(shareUrl)} style={{
               background: "none", border: "1px solid #334155", borderRadius: 8,
               color: "#94a3b8", padding: "8px 16px", fontSize: 13, cursor: "pointer",
             }}>
               Copy invite link
             </button>
-          </div>
-        )}
+          )}
+          {onLogout && (
+            <button onClick={onLogout} style={{
+              background: "none", border: "1px solid #334155", borderRadius: 8,
+              color: "#64748b", padding: "8px 16px", fontSize: 13, cursor: "pointer",
+            }}>
+              Switch pool / Log out
+            </button>
+          )}
+        </div>
 
         <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
           <button onClick={onPlay} style={{
@@ -627,6 +637,11 @@ function PoolLobby({ poolId, player, onPlay, onLeaderboard, onAdmin }) {
           }}>
             {hasLockedCurrentRound ? "View Picks" : "Make Picks"}
           </button>
+          {hasLockedCurrentRound && !isBeforeDeadline(currentRound) && (
+            <button onClick={() => onLiveScores(currentRound)} style={{
+              ...s.btnSecondary, borderColor: "rgba(34,197,94,0.3)", color: "#22c55e",
+            }}>Live Scores</button>
+          )}
           <button onClick={onLeaderboard} style={s.btnSecondary}>Leaderboard</button>
           <button onClick={onAdmin} style={{
             ...s.btnSecondary, borderColor: "rgba(255,255,255,0.1)", color: "#64748b", fontSize: 14,
@@ -800,7 +815,7 @@ function EliminatedView({ poolId, player, picks, matchups, onBack }) {
   );
 }
 
-function PlayView({ poolId, player, onBack }) {
+function PlayView({ poolId, player, onBack, onLiveScores }) {
   const [picks, setPicks] = useState({}); // { "East-0": "Duke", ... }
   const [usedTeams, setUsedTeams] = useState([]);
   const [lockedRounds, setLockedRounds] = useState([]);
@@ -1066,16 +1081,24 @@ function PlayView({ poolId, player, onBack }) {
             }}>
               Picks Locked &#10003;
             </div>
-            {canEdit && (
-              <div style={{ marginTop: 8 }}>
+            <div style={{ display: "flex", gap: 8, justifyContent: "center", marginTop: 10 }}>
+              {canEdit && (
                 <button onClick={unlockForEditing} style={{
                   background: "none", border: "1px solid #334155", borderRadius: 8,
                   color: "#94a3b8", padding: "6px 16px", fontSize: 12, cursor: "pointer",
                 }}>
                   Edit picks (before deadline)
                 </button>
-              </div>
-            )}
+              )}
+              {deadlinePassed && onLiveScores && (
+                <button onClick={() => onLiveScores(currentRound, picks)} style={{
+                  background: "none", border: "1px solid rgba(34,197,94,0.3)", borderRadius: 8,
+                  color: "#22c55e", padding: "6px 16px", fontSize: 12, cursor: "pointer",
+                }}>
+                  Watch Live Scores
+                </button>
+              )}
+            </div>
           </div>
         )}
 
@@ -1119,8 +1142,8 @@ function PlayView({ poolId, player, onBack }) {
       {/* Matchup grid */}
       {matchups && (
         <div style={{
-          display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
-          gap: 16, maxWidth: 1200, margin: "0 auto",
+          display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+          gap: 12, maxWidth: 1200, margin: "0 auto",
         }}>
           {Object.keys(matchups).map((groupName) => {
             const groupMatchups = matchups[groupName];
@@ -1222,16 +1245,263 @@ function PlayView({ poolId, player, onBack }) {
   );
 }
 
+// ============================================================
+// LIVE SCORES VIEW - Shows real-time scores while games are happening
+// ============================================================
+
+function LiveScoresView({ poolId, player, currentRound, picks: propPicks, onBack }) {
+  const [scores, setScores] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [lastUpdated, setLastUpdated] = useState(null);
+  const [playerPicks, setPlayerPicks] = useState(propPicks || {});
+
+  const fetchScores = useCallback(async () => {
+    const data = await api(`/scores/${currentRound}`);
+    if (data.games) {
+      setScores(data.games);
+      setLastUpdated(new Date());
+    }
+    setLoading(false);
+  }, [currentRound]);
+
+  useEffect(() => {
+    fetchScores();
+    const iv = setInterval(fetchScores, 30000); // refresh every 30 seconds
+    return () => clearInterval(iv);
+  }, [fetchScores]);
+
+  // Fetch player's picks if not provided via props
+  useEffect(() => {
+    if (!propPicks || Object.keys(propPicks).length === 0) {
+      api(`/players/${player.id}/picks`).then((allPicks) => {
+        const roundPicks = {};
+        for (const p of allPicks) {
+          if (p.round === currentRound && p.locked) {
+            roundPicks[`${p.region}-${p.matchup_idx}`] = p.team;
+          }
+        }
+        setPlayerPicks(roundPicks);
+      });
+    }
+  }, [player.id, currentRound, propPicks]);
+
+  // Build a set of the player's picked teams for highlighting
+  const picks = playerPicks;
+  const pickedTeams = new Set(Object.values(picks).filter(Boolean));
+
+  if (loading) return <div style={{ ...s.page, ...s.center }}><div style={{ color: "#64748b" }}>Loading scores...</div></div>;
+
+  const inProgress = (scores || []).filter(g => g.inProgress);
+  const completed = (scores || []).filter(g => g.completed);
+  const upcoming = (scores || []).filter(g => !g.completed && !g.inProgress);
+
+  // Check each picked team's status
+  const pickStatuses = Object.entries(picks).filter(([, v]) => v).map(([, team]) => {
+    const game = (scores || []).find(g =>
+      g.home.name === team || g.away.name === team ||
+      g.home.shortName === team || g.away.shortName === team
+    );
+    if (!game) return { team, status: "upcoming", detail: "Game not started" };
+    if (game.completed) {
+      const won = game.winner === team;
+      return { team, status: won ? "won" : "lost", detail: won ? "Advanced!" : `Lost to ${game.winner}`, game };
+    }
+    if (game.inProgress) {
+      const isHome = game.home.name === team || game.home.shortName === team;
+      const myScore = isHome ? game.home.score : game.away.score;
+      const oppScore = isHome ? game.away.score : game.home.score;
+      const leading = myScore > oppScore;
+      return { team, status: leading ? "leading" : myScore === oppScore ? "tied" : "trailing", detail: `${game.home.score} - ${game.away.score}`, game };
+    }
+    return { team, status: "upcoming", detail: game.statusDetail || "Scheduled", game };
+  });
+
+  return (
+    <div style={s.page}>
+      <button onClick={onBack} style={s.backBtn}>&#8592; Back to Pool</button>
+      <div style={{ maxWidth: 700, margin: "0 auto" }}>
+        <div style={{ textAlign: "center", marginBottom: 20 }}>
+          <h2 style={{ color: "#fff", fontSize: 28, margin: "0 0 4px 0" }}>
+            Live Scores
+          </h2>
+          <p style={{ color: "#64748b", fontSize: 13 }}>
+            {ROUND_CONFIG[currentRound]?.name} {lastUpdated && `| Updated ${lastUpdated.toLocaleTimeString()}`}
+          </p>
+          <button onClick={fetchScores} style={{
+            background: "none", border: "1px solid #334155", borderRadius: 8,
+            color: "#94a3b8", padding: "6px 14px", fontSize: 12, cursor: "pointer", marginTop: 8,
+          }}>Refresh Now</button>
+        </div>
+
+        {/* Your picks tracker */}
+        <h3 style={{ color: "#f97316", fontSize: 16, margin: "0 0 12px 0" }}>Your Picks</h3>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 24 }}>
+          {pickStatuses.map((ps) => {
+            const statusColors = {
+              won: { bg: "rgba(34,197,94,0.15)", border: "rgba(34,197,94,0.3)", color: "#22c55e", icon: "\u2705" },
+              lost: { bg: "rgba(239,68,68,0.15)", border: "rgba(239,68,68,0.3)", color: "#ef4444", icon: "\u274C" },
+              leading: { bg: "rgba(34,197,94,0.1)", border: "rgba(34,197,94,0.2)", color: "#86efac", icon: "\u{1F4C8}" },
+              trailing: { bg: "rgba(239,68,68,0.1)", border: "rgba(239,68,68,0.2)", color: "#fca5a5", icon: "\u{1F4C9}" },
+              tied: { bg: "rgba(249,115,22,0.1)", border: "rgba(249,115,22,0.2)", color: "#fdba74", icon: "\u{1F91D}" },
+              upcoming: { bg: "rgba(255,255,255,0.03)", border: "rgba(255,255,255,0.1)", color: "#94a3b8", icon: "\u{1F552}" },
+            };
+            const sc = statusColors[ps.status] || statusColors.upcoming;
+            return (
+              <div key={ps.team} style={{
+                ...s.card, padding: "12px 16px",
+                backgroundColor: sc.bg, border: `1px solid ${sc.border}`,
+              }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontSize: 18 }}>{sc.icon}</span>
+                    <span style={{ color: "#fff", fontWeight: 700, fontSize: 15 }}>{ps.team}</span>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    {ps.game && ps.game.inProgress && (
+                      <span style={{ color: "#fff", fontWeight: 700, fontFamily: "monospace", fontSize: 16 }}>
+                        {ps.detail}
+                      </span>
+                    )}
+                    <span style={{
+                      padding: "4px 10px", borderRadius: 20, fontSize: 11, fontWeight: 700,
+                      backgroundColor: "rgba(0,0,0,0.2)", color: sc.color,
+                    }}>
+                      {ps.status === "won" ? "W" : ps.status === "lost" ? "L" : ps.status === "leading" ? "LEADING" : ps.status === "trailing" ? "TRAILING" : ps.status === "tied" ? "TIED" : "UPCOMING"}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* In Progress Games */}
+        {inProgress.length > 0 && (
+          <>
+            <h3 style={{ color: "#22c55e", fontSize: 16, margin: "0 0 12px 0", display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{
+                width: 8, height: 8, borderRadius: "50%", backgroundColor: "#22c55e",
+                display: "inline-block", animation: "pulse 2s infinite",
+              }} />
+              Live Now ({inProgress.length})
+            </h3>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 10, marginBottom: 24 }}>
+              {inProgress.map((g) => (
+                <ScoreCard key={g.id} game={g} pickedTeams={pickedTeams} />
+              ))}
+            </div>
+          </>
+        )}
+
+        {/* Completed Games */}
+        {completed.length > 0 && (
+          <>
+            <h3 style={{ color: "#94a3b8", fontSize: 16, margin: "0 0 12px 0" }}>Final ({completed.length})</h3>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 10, marginBottom: 24 }}>
+              {completed.map((g) => (
+                <ScoreCard key={g.id} game={g} pickedTeams={pickedTeams} />
+              ))}
+            </div>
+          </>
+        )}
+
+        {/* Upcoming Games */}
+        {upcoming.length > 0 && (
+          <>
+            <h3 style={{ color: "#64748b", fontSize: 16, margin: "0 0 12px 0" }}>Upcoming ({upcoming.length})</h3>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 10, marginBottom: 24 }}>
+              {upcoming.map((g) => (
+                <ScoreCard key={g.id} game={g} pickedTeams={pickedTeams} />
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ScoreCard({ game, pickedTeams }) {
+  const homeHighlight = pickedTeams.has(game.home.name);
+  const awayHighlight = pickedTeams.has(game.away.name);
+  const isLive = game.inProgress;
+
+  return (
+    <div style={{
+      ...s.card, padding: 12,
+      border: isLive ? "1px solid rgba(34,197,94,0.3)" : "1px solid rgba(255,255,255,0.05)",
+    }}>
+      {isLive && (
+        <div style={{ fontSize: 10, color: "#22c55e", fontWeight: 700, marginBottom: 6, textTransform: "uppercase", letterSpacing: 1 }}>
+          {game.statusDetail || "In Progress"}
+        </div>
+      )}
+      {!isLive && !game.completed && (
+        <div style={{ fontSize: 10, color: "#64748b", marginBottom: 6 }}>
+          {game.statusDetail || "Scheduled"}
+        </div>
+      )}
+      {game.completed && (
+        <div style={{ fontSize: 10, color: "#94a3b8", fontWeight: 700, marginBottom: 6 }}>FINAL</div>
+      )}
+      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        {[game.away, game.home].map((team, ti) => {
+          const isPicked = pickedTeams.has(team.name);
+          const isWinner = game.completed && game.winner === team.name;
+          return (
+            <div key={ti} style={{
+              display: "flex", justifyContent: "space-between", alignItems: "center",
+              padding: "6px 8px", borderRadius: 6,
+              backgroundColor: isPicked ? "rgba(249,115,22,0.1)" : "transparent",
+              border: isPicked ? "1px solid rgba(249,115,22,0.3)" : "1px solid transparent",
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                {team.seed && team.seed < 20 && (
+                  <span style={{ color: "#64748b", fontSize: 11, fontWeight: 600, minWidth: 16 }}>{team.seed}</span>
+                )}
+                <span style={{
+                  color: isWinner ? "#22c55e" : game.completed && !isWinner ? "#64748b" : "#fff",
+                  fontWeight: isWinner || isPicked ? 700 : 500, fontSize: 14,
+                }}>
+                  {team.name}
+                </span>
+                {isPicked && <span style={{ fontSize: 10, color: "#f97316", fontWeight: 700, marginLeft: 4 }}>YOUR PICK</span>}
+              </div>
+              <span style={{
+                color: isWinner ? "#22c55e" : "#fff",
+                fontWeight: 700, fontSize: 16, fontFamily: "monospace",
+              }}>
+                {(game.inProgress || game.completed) ? team.score : ""}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function LeaderboardView({ poolId, onBack }) {
   const [data, setData] = useState(null);
+  const [results, setResults] = useState([]);
+  const [expandedPlayer, setExpandedPlayer] = useState(null);
 
   useEffect(() => {
     api(`/pools/${poolId}/leaderboard`).then(setData);
+    api(`/pools/${poolId}/results`).then(setResults);
   }, [poolId]);
 
   if (!data) return <div style={{ ...s.page, ...s.center }}><div style={{ color: "#64748b" }}>Loading...</div></div>;
 
   const alive = data.filter((p) => p.alive).length;
+
+  // Build results map for W/L checking
+  const resultMap = {};
+  const gradedRounds = new Set();
+  for (const r of results) {
+    resultMap[`${r.round}-${r.region}-${r.matchup_idx}`] = r.winner;
+    gradedRounds.add(r.round);
+  }
 
   return (
     <div style={s.page}>
@@ -1244,7 +1514,7 @@ function LeaderboardView({ poolId, onBack }) {
 
         <div style={{ ...s.card, overflow: "hidden", padding: 0 }}>
           <div style={{
-            display: "grid", gridTemplateColumns: "40px 1fr 100px 100px",
+            display: "grid", gridTemplateColumns: "32px 1fr 70px 70px",
             padding: "12px 16px", fontSize: 11, color: "#64748b",
             textTransform: "uppercase", letterSpacing: 1, borderBottom: "1px solid rgba(255,255,255,0.05)",
           }}>
@@ -1252,61 +1522,91 @@ function LeaderboardView({ poolId, onBack }) {
           </div>
 
           {data.map((p, i) => (
-            <div key={p.id} style={{
-              display: "grid", gridTemplateColumns: "40px 1fr 100px 100px",
-              padding: "14px 16px", borderBottom: "1px solid rgba(255,255,255,0.03)", opacity: p.alive ? 1 : 0.5,
-            }}>
-              <div style={{ color: "#64748b", fontWeight: 600 }}>{i + 1}</div>
-              <div style={{ color: "#fff", fontWeight: 600 }}>{p.name}</div>
-              <div style={{ textAlign: "center" }}>
-                <span style={{
-                  padding: "4px 10px", borderRadius: 20, fontSize: 11, fontWeight: 700,
-                  backgroundColor: p.alive ? "rgba(34,197,94,0.15)" : "rgba(239,68,68,0.15)",
-                  color: p.alive ? "#22c55e" : "#ef4444",
+            <div key={p.id}>
+              <div onClick={() => setExpandedPlayer(expandedPlayer === p.id ? null : p.id)} style={{
+                display: "grid", gridTemplateColumns: "32px 1fr 70px 70px",
+                padding: "14px 16px", borderBottom: "1px solid rgba(255,255,255,0.03)",
+                opacity: p.alive ? 1 : 0.5, cursor: "pointer",
+                backgroundColor: expandedPlayer === p.id ? "rgba(249,115,22,0.05)" : "transparent",
+                transition: "background-color 0.15s",
+              }}>
+                <div style={{ color: "#64748b", fontWeight: 600 }}>{i + 1}</div>
+                <div style={{ color: "#fff", fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
+                  {p.name}
+                  <span style={{ color: "#475569", fontSize: 11 }}>{expandedPlayer === p.id ? "\u25B2" : "\u25BC"}</span>
+                </div>
+                <div style={{ textAlign: "center" }}>
+                  <span style={{
+                    padding: "4px 10px", borderRadius: 20, fontSize: 11, fontWeight: 700,
+                    backgroundColor: p.alive ? "rgba(34,197,94,0.15)" : "rgba(239,68,68,0.15)",
+                    color: p.alive ? "#22c55e" : "#ef4444",
+                  }}>
+                    {p.alive ? "ALIVE" : "OUT"}
+                  </span>
+                </div>
+                <div style={{ textAlign: "center", color: "#94a3b8", fontSize: 14 }}>
+                  {p.roundsLocked} / {ROUND_CONFIG.length}
+                </div>
+              </div>
+
+              {/* Expanded pick details with W/L after grading */}
+              {expandedPlayer === p.id && (
+                <div style={{
+                  padding: "12px 16px 16px 56px",
+                  borderBottom: "1px solid rgba(255,255,255,0.05)",
+                  backgroundColor: "rgba(255,255,255,0.02)",
                 }}>
-                  {p.alive ? "ALIVE" : "OUT"}
-                </span>
-              </div>
-              <div style={{ textAlign: "center", color: "#94a3b8", fontSize: 14 }}>
-                {p.roundsLocked} / {ROUND_CONFIG.length}
-              </div>
+                  {p.picks.length === 0 ? (
+                    <div style={{ color: "#64748b", fontSize: 13 }}>No picks locked yet</div>
+                  ) : (
+                    (() => {
+                      const byRound = {};
+                      for (const pk of p.picks) {
+                        if (!byRound[pk.round]) byRound[pk.round] = [];
+                        byRound[pk.round].push(pk);
+                      }
+                      return Object.entries(byRound).map(([r, roundPicks]) => {
+                        const roundNum = parseInt(r);
+                        const isGraded = gradedRounds.has(roundNum);
+                        return (
+                          <div key={r} style={{ marginBottom: 10 }}>
+                            <div style={{ color: "#94a3b8", fontSize: 12, fontWeight: 600, marginBottom: 4 }}>
+                              {ROUND_CONFIG[roundNum]?.name || `Round ${r}`}
+                            </div>
+                            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                              {roundPicks.map((pk, pi) => {
+                                const resultKey = `${pk.round}-${pk.region}-${pk.matchup_idx}`;
+                                const winner = resultMap[resultKey];
+                                const won = winner && winner === pk.team;
+                                const lost = winner && winner !== pk.team;
+                                return (
+                                  <span key={pi} style={{
+                                    display: "inline-flex", alignItems: "center", gap: 4,
+                                    padding: "4px 10px", borderRadius: 6, fontSize: 13,
+                                    backgroundColor: !isGraded ? "rgba(255,255,255,0.05)"
+                                      : won ? "rgba(34,197,94,0.15)"
+                                      : lost ? "rgba(239,68,68,0.15)"
+                                      : "rgba(255,255,255,0.05)",
+                                    color: !isGraded ? "#94a3b8" : won ? "#22c55e" : lost ? "#ef4444" : "#94a3b8",
+                                    border: `1px solid ${!isGraded ? "rgba(255,255,255,0.1)" : won ? "rgba(34,197,94,0.3)" : lost ? "rgba(239,68,68,0.3)" : "rgba(255,255,255,0.1)"}`,
+                                  }}>
+                                    {pk.team}
+                                    {isGraded && won && <span style={{ fontWeight: 700 }}> W</span>}
+                                    {isGraded && lost && <span style={{ fontWeight: 700 }}> L</span>}
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      });
+                    })()
+                  )}
+                </div>
+              )}
             </div>
           ))}
         </div>
-
-        {/* Pick details */}
-        <h3 style={{ color: "#fff", fontSize: 18, margin: "32px 0 16px 0" }}>Pick History</h3>
-        {data.map((p) => (
-          <div key={p.id} style={{ ...s.card, marginBottom: 12 }}>
-            <div style={{ color: "#fff", fontWeight: 700, fontSize: 16, marginBottom: 8, display: "flex", alignItems: "center", gap: 8 }}>
-              {p.name}
-              <span style={{
-                fontSize: 11, padding: "2px 8px", borderRadius: 10,
-                backgroundColor: p.alive ? "rgba(34,197,94,0.15)" : "rgba(239,68,68,0.15)",
-                color: p.alive ? "#22c55e" : "#ef4444",
-              }}>{p.alive ? "ALIVE" : "ELIMINATED"}</span>
-            </div>
-            {p.picks.length === 0 ? (
-              <div style={{ color: "#64748b", fontSize: 13 }}>No picks locked yet</div>
-            ) : (
-              (() => {
-                const byRound = {};
-                for (const pk of p.picks) {
-                  if (!byRound[pk.round]) byRound[pk.round] = [];
-                  byRound[pk.round].push(pk.team);
-                }
-                return Object.entries(byRound).map(([r, teams]) => (
-                  <div key={r} style={{ marginBottom: 6 }}>
-                    <span style={{ color: "#94a3b8", fontSize: 12, fontWeight: 600 }}>
-                      {ROUND_CONFIG[parseInt(r)]?.name || `Round ${r}`}:
-                    </span>{" "}
-                    <span style={{ color: "#e2e8f0", fontSize: 13 }}>{teams.join(", ")}</span>
-                  </div>
-                ));
-              })()
-            )}
-          </div>
-        ))}
       </div>
     </div>
   );
@@ -1540,9 +1840,25 @@ export default function App() {
   const [view, setView] = useState("home");
   const [poolId, setPoolId] = useState(null);
   const [player, setPlayer] = useState(null);
+  const [liveScoresRound, setLiveScoresRound] = useState(0);
+  const [liveScoresPicks, setLiveScoresPicks] = useState({});
 
-  // Check URL for pool code
+  // Restore session from localStorage on mount
   useEffect(() => {
+    try {
+      const saved = localStorage.getItem("mm_survivor_session");
+      if (saved) {
+        const session = JSON.parse(saved);
+        if (session.poolId && session.player) {
+          setPoolId(session.poolId);
+          setPlayer(session.player);
+          setView("lobby");
+          return; // skip URL check if we have a session
+        }
+      }
+    } catch (e) { /* ignore parse errors */ }
+
+    // Check URL for pool code
     const params = new URLSearchParams(window.location.search);
     const code = params.get("pool");
     if (code) {
@@ -1550,6 +1866,22 @@ export default function App() {
       setView("join");
     }
   }, []);
+
+  // Save session to localStorage when player joins
+  useEffect(() => {
+    if (poolId && player) {
+      try {
+        localStorage.setItem("mm_survivor_session", JSON.stringify({ poolId, player }));
+      } catch (e) { /* ignore */ }
+    }
+  }, [poolId, player]);
+
+  function logout() {
+    try { localStorage.removeItem("mm_survivor_session"); } catch (e) { /* ignore */ }
+    setPoolId(null);
+    setPlayer(null);
+    setView("home");
+  }
 
   switch (view) {
     case "home":
@@ -1585,6 +1917,8 @@ export default function App() {
           onPlay={() => setView("play")}
           onLeaderboard={() => setView("leaderboard")}
           onAdmin={() => setView("admin")}
+          onLiveScores={(round) => { setLiveScoresRound(round); setView("live"); }}
+          onLogout={logout}
         />
       );
 
@@ -1593,6 +1927,18 @@ export default function App() {
         <PlayView
           poolId={poolId}
           player={player}
+          onBack={() => setView("lobby")}
+          onLiveScores={(round, picks) => { setLiveScoresRound(round); setLiveScoresPicks(picks); setView("live"); }}
+        />
+      );
+
+    case "live":
+      return (
+        <LiveScoresView
+          poolId={poolId}
+          player={player}
+          currentRound={liveScoresRound}
+          picks={liveScoresPicks}
           onBack={() => setView("lobby")}
         />
       );
