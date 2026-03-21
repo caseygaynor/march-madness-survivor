@@ -862,7 +862,7 @@ function PoolLobby({ poolId, player, onPlay, onLeaderboard, onAdmin, onLiveScore
       color: "#fca5a5",
       icon: "\u{1F480}",
       title: "You've been eliminated",
-      message: "Check back to see which of your friends are still alive and kicking!",
+      message: "You're out of contention, but you can still make picks for bragging rights!",
     };
   } else if (hasLockedCurrentRound) {
     const beforeDeadline = isBeforeDeadline(currentRound);
@@ -1600,17 +1600,7 @@ function PlayView({ poolId, player, onBack, onLiveScores }) {
 
   if (loading) return <div style={{ ...s.page, ...s.center }}><div style={{ color: "#64748b" }}>Loading picks...</div></div>;
 
-  if (!player.alive) {
-    return (
-      <EliminatedView
-        poolId={poolId}
-        player={player}
-        picks={picks}
-        matchups={matchups || getR32Matchups()}
-        onBack={onBack}
-      />
-    );
-  }
+  const isEliminated = !player.alive;
 
   // Build player's picks map by round for bracket view
   const playerPicksByRound = {};
@@ -1624,6 +1614,26 @@ function PlayView({ poolId, player, onBack, onLiveScores }) {
   return (
     <div style={s.page}>
       <button onClick={onBack} style={s.backBtn}>&#9664; Pool</button>
+
+      {/* Eliminated banner - keep playing for bragging rights */}
+      {isEliminated && (
+        <div style={{
+          padding: "14px 18px", borderRadius: 12, marginBottom: 16,
+          background: "linear-gradient(135deg, rgba(239,68,68,0.1), rgba(249,115,22,0.1))",
+          border: "1px solid rgba(239,68,68,0.2)",
+          display: "flex", alignItems: "center", gap: 12,
+        }}>
+          <span style={{ fontSize: 24, flexShrink: 0 }}>{"\u{1F480}"}</span>
+          <div>
+            <div style={{ color: "#fca5a5", fontWeight: 700, fontSize: 14 }}>
+              You've been eliminated
+            </div>
+            <div style={{ color: "#94a3b8", fontSize: 12, marginTop: 2 }}>
+              Keep picking for bragging rights! Your picks won't count toward winning the pool.
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Picks / Bracket tab toggle */}
       <div style={{ display: "flex", justifyContent: "center", gap: 4, marginBottom: 20 }}>
@@ -2632,6 +2642,7 @@ function LeaderboardView({ poolId, player: currentPlayer, onBack }) {
   const [lb, setLb] = useState(null);
   const [expandedPlayer, setExpandedPlayer] = useState(null);
   const [showConfetti, setShowConfetti] = useState(false);
+  const [showFullPool, setShowFullPool] = useState(false);
 
   useEffect(() => {
     api(`/pools/${poolId}/leaderboard`).then((data) => {
@@ -2712,16 +2723,41 @@ function LeaderboardView({ poolId, player: currentPlayer, onBack }) {
         )}
 
         {/* Header */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 16 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 12 }}>
           <h2 style={{ color: "#fff", fontSize: 28, margin: 0 }}>Leaderboard</h2>
           <span style={{ color: "#64748b", fontSize: 14 }}>
             {aliveCount} / {totalPlayers} alive
           </span>
         </div>
 
+        {/* Contenders / Full Pool toggle */}
+        <div style={{ display: "flex", justifyContent: "center", gap: 4, marginBottom: 16 }}>
+          <button onClick={() => setShowFullPool(false)} style={{
+            padding: "8px 18px", borderRadius: 20, border: "none", cursor: "pointer",
+            fontSize: 13, fontWeight: 700, transition: "all 0.15s ease",
+            backgroundColor: !showFullPool ? "rgba(34,197,94,0.2)" : "rgba(255,255,255,0.05)",
+            color: !showFullPool ? "#22c55e" : "#64748b",
+          }}>Contenders</button>
+          <button onClick={() => setShowFullPool(true)} style={{
+            padding: "8px 18px", borderRadius: 20, border: "none", cursor: "pointer",
+            fontSize: 13, fontWeight: 700, transition: "all 0.15s ease",
+            backgroundColor: showFullPool ? "rgba(249,115,22,0.2)" : "rgba(255,255,255,0.05)",
+            color: showFullPool ? "#f97316" : "#64748b",
+          }}>Full Pool</button>
+        </div>
+
         {/* Player cards */}
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {data.map((p, i) => {
+          {(() => {
+            const filteredData = showFullPool ? data : data.filter(p => p.alive);
+            if (filteredData.length === 0) {
+              return (
+                <div style={{ textAlign: "center", padding: 24, color: "#64748b", fontSize: 14 }}>
+                  {showFullPool ? "No players yet." : "No contenders remaining. Switch to Full Pool to see everyone."}
+                </div>
+              );
+            }
+            return filteredData.map((p, i) => {
             const isWinner = winners.includes(p.name);
             const isCurrentPlayer = currentPlayer && p.name === currentPlayer.name;
             const isExpanded = expandedPlayer === p.id;
@@ -2853,20 +2889,31 @@ function LeaderboardView({ poolId, player: currentPlayer, onBack }) {
                                 {ROUND_CONFIG[roundNum]?.name || `Round ${r}`}
                               </div>
                               <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                                {roundPicks.map((pk, pi) => (
-                                  <span key={pi} style={{
-                                    display: "inline-flex", alignItems: "center", gap: 4,
-                                    padding: "4px 10px", borderRadius: 6, fontSize: 13,
-                                    backgroundColor: "rgba(255,255,255,0.05)",
-                                    color: "#cbd5e1",
-                                    border: "1px solid rgba(255,255,255,0.1)",
-                                  }}>
-                                    {pk.seed > 0 && (
-                                      <JerseyBadge seed={pk.seed} teamName={pk.team} />
-                                    )}
-                                    <span>{pk.team}</span>
-                                  </span>
-                                ))}
+                                {roundPicks.map((pk, pi) => {
+                                  const pickStatus = pk.pick_result || null;
+                                  return (
+                                    <span key={pi} style={{
+                                      display: "inline-flex", alignItems: "center", gap: 4,
+                                      padding: "4px 10px", borderRadius: 6, fontSize: 13,
+                                      backgroundColor: pickStatus === "correct" ? "rgba(34,197,94,0.1)"
+                                        : pickStatus === "incorrect" ? "rgba(239,68,68,0.1)"
+                                        : "rgba(255,255,255,0.05)",
+                                      color: pickStatus === "correct" ? "#86efac"
+                                        : pickStatus === "incorrect" ? "#fca5a5"
+                                        : "#cbd5e1",
+                                      border: pickStatus === "correct" ? "1px solid rgba(34,197,94,0.25)"
+                                        : pickStatus === "incorrect" ? "1px solid rgba(239,68,68,0.25)"
+                                        : "1px solid rgba(255,255,255,0.1)",
+                                    }}>
+                                      {pk.seed > 0 && (
+                                        <JerseyBadge seed={pk.seed} teamName={pk.team} />
+                                      )}
+                                      <span>{pk.team}</span>
+                                      {pickStatus === "correct" && <span style={{ fontSize: 11 }}>&#10003;</span>}
+                                      {pickStatus === "incorrect" && <span style={{ fontSize: 11 }}>&#10005;</span>}
+                                    </span>
+                                  );
+                                })}
                               </div>
                             </div>
                           );
@@ -2882,7 +2929,8 @@ function LeaderboardView({ poolId, player: currentPlayer, onBack }) {
                 )}
               </div>
             );
-          })}
+          });
+          })()}
         </div>
       </div>
     </div>

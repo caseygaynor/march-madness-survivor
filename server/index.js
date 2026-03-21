@@ -636,7 +636,7 @@ app.post('/api/players/:playerId/picks', (req, res) => {
 
   const player = db.prepare('SELECT * FROM players WHERE id = ?').get(playerId);
   if (!player) return res.status(404).json({ error: 'Player not found' });
-  if (!player.alive) return res.status(400).json({ error: 'Player is eliminated' });
+  // Eliminated players can still pick for fun, they just can't win
 
   // If editing, allow overwriting locked picks (deadline hasn't passed, checked above)
   // If not editing, reject if picks are already locked
