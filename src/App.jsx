@@ -607,16 +607,41 @@ function JoinPoolView({ onBack, onJoined, initialCode }) {
 
         {!pool ? (
           <>
-            <p style={{ color: "#94a3b8", fontSize: 14, marginBottom: 16 }}>Enter the pool code your friend shared:</p>
-            <div style={{ display: "flex", gap: 8 }}>
+            {initialCode ? (
+              <div style={{
+                display: "flex", alignItems: "center", gap: 8, marginBottom: 16,
+                padding: "10px 14px", borderRadius: 10,
+                backgroundColor: "rgba(34,197,94,0.1)", border: "1px solid rgba(34,197,94,0.3)",
+              }}>
+                <span style={{ fontSize: 20 }}>&#10003;</span>
+                <span style={{ color: "#86efac", fontSize: 14 }}>Pool code ready</span>
+              </div>
+            ) : (
+              <p style={{ color: "#94a3b8", fontSize: 14, marginBottom: 16 }}>Enter the pool code your friend shared:</p>
+            )}
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
               <input
                 value={code} onChange={(e) => setCode(e.target.value.toUpperCase())}
                 onKeyDown={(e) => e.key === "Enter" && lookupPool()}
                 placeholder="POOL CODE"
                 maxLength={6}
-                style={{ ...s.input, letterSpacing: 4, fontWeight: 700, fontSize: 20, textAlign: "center", fontFamily: "monospace" }}
+                style={{
+                  ...s.input, letterSpacing: 4, fontWeight: 700, fontSize: 20, textAlign: "center", fontFamily: "monospace",
+                  ...(initialCode && code ? { borderColor: "#22c55e", color: "#22c55e" } : {}),
+                }}
               />
-              <button onClick={lookupPool} style={{ ...s.btnPrimary, padding: "12px 20px", fontSize: 14 }}>Find</button>
+              <div style={{ position: "relative" }}>
+                {initialCode && code && (
+                  <span style={{
+                    position: "absolute", top: -18, left: "50%", transform: "translateX(-50%)",
+                    fontSize: 16, animation: "pulse 1.5s infinite",
+                  }}>&#11015;</span>
+                )}
+                <button onClick={lookupPool} style={{
+                  ...s.btnPrimary, padding: "12px 20px", fontSize: 14,
+                  ...(initialCode && code ? { backgroundColor: "#22c55e", animation: "pulse 1.5s infinite" } : {}),
+                }}>Find</button>
+              </div>
             </div>
           </>
         ) : (
