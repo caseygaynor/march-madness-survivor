@@ -118,8 +118,21 @@ function getR32Matchups() {
   const matchups = {};
   for (const region of REGIONS) {
     const winners = FIRST_ROUND[region].map((m) => {
+      if (!m.done) {
+        // Game not final: show both teams as a combined pick option
+        return {
+          name: `${m.team1}/${m.team2}`,
+          seed: Math.max(m.seed1, m.seed2), // use higher seed for tiebreaker (riskier)
+          region,
+          projected: true,
+          pendingTeams: [
+            { name: m.team1, seed: m.seed1 },
+            { name: m.team2, seed: m.seed2 },
+          ],
+        };
+      }
       const seed = m.winner === m.team1 ? m.seed1 : m.seed2;
-      return { name: m.winner, seed, region, projected: !m.done };
+      return { name: m.winner, seed, region, projected: false };
     });
     matchups[region] = [
       { teamA: winners[0], teamB: winners[1] },
@@ -298,7 +311,13 @@ const TEAM_COLORS = {
 };
 
 function getTeamColor(teamName) {
-  return TEAM_COLORS[teamName] || "#64748b";
+  if (TEAM_COLORS[teamName]) return TEAM_COLORS[teamName];
+  // Handle combined names like "UCF/UCLA" -- use first team's color
+  if (teamName && teamName.includes("/")) {
+    const first = teamName.split("/")[0];
+    if (TEAM_COLORS[first]) return TEAM_COLORS[first];
+  }
+  return "#64748b";
 }
 
 // Determine if a color is light enough to need dark text
@@ -348,7 +367,7 @@ function TeamButton({ team, selected, disabled, used, onClick }) {
       <SeedBadge seed={team.seed} teamName={team.name} />
       <span style={{ flex: 1 }}>
         {team.name}
-        {team.projected && <span style={{ fontSize: 10, color: "#9ca3af", marginLeft: 4 }}>(proj.)</span>}
+        {team.projected && !team.pendingTeams && <span style={{ fontSize: 10, color: "#9ca3af", marginLeft: 4 }}>(TBD)</span>}
       </span>
       {used && <span style={{ color: "#dc2626", fontSize: 11, fontWeight: 700 }}>USED</span>}
       {selected && !used && <span style={{ color: "#2563eb", fontWeight: 700 }}>&#10003;</span>}
