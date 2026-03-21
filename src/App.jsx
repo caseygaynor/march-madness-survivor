@@ -2986,21 +2986,17 @@ export default function App() {
   const [liveScoresPicks, setLiveScoresPicks] = useState({});
 
   // Restore session from localStorage on mount (validate it still exists)
-  // Invite links (?pool=CODE) always take priority over saved sessions
+  // Invite links (?pool=CODE) send NEW users to join, but existing members go to their lobby
   useEffect(() => {
     async function restoreSession() {
-      // Check URL for pool code (invite link) FIRST - this always takes priority
       const params = new URLSearchParams(window.location.search);
-      const urlCode = params.get("pool");
+      const urlCode = params.get("pool")?.toUpperCase();
+      // Clean the URL early so refreshing doesn't re-trigger
       if (urlCode) {
-        setPoolId(urlCode.toUpperCase());
-        setView("join");
-        // Clean the URL so refreshing doesn't re-trigger
         window.history.replaceState({}, "", window.location.pathname);
-        return;
       }
 
-      // No invite link, try restoring saved session
+      // Try restoring saved session first
       try {
         const saved = localStorage.getItem("mm_survivor_session");
         if (saved) {
@@ -3011,10 +3007,14 @@ export default function App() {
             if (!pool.error) {
               const serverPlayer = pool.players?.find(p => p.id === session.player.id);
               if (serverPlayer) {
-                setPoolId(session.poolId);
-                setPlayer({ ...session.player, alive: serverPlayer.alive });
-                setView("lobby");
-                return;
+                // If invite link matches their pool OR no invite link, restore session
+                if (!urlCode || urlCode === session.poolId) {
+                  setPoolId(session.poolId);
+                  setPlayer({ ...session.player, alive: serverPlayer.alive });
+                  setView("lobby");
+                  return;
+                }
+                // Invite link is for a DIFFERENT pool, send to join flow
               }
             }
             // Pool or player gone, clear stale session
@@ -3023,6 +3023,12 @@ export default function App() {
         }
       } catch (e) {
         try { localStorage.removeItem("mm_survivor_session"); } catch (_) {}
+      }
+
+      // No valid session (or invite link for different pool), check URL
+      if (urlCode) {
+        setPoolId(urlCode);
+        setView("join");
       }
     }
     restoreSession();
