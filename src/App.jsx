@@ -94,7 +94,7 @@ const FIRST_ROUND = {
   ],
   West: [
     { seed1: 1, team1: "Arizona", score1: 92, seed2: 16, team2: "Long Island", score2: 58, winner: "Arizona", done: true },
-    { seed1: 8, team1: "Villanova", score1: null, seed2: 9, team2: "Utah State", score2: null, winner: "Villanova", done: false },
+    { seed1: 8, team1: "Villanova", score1: 76, seed2: 9, team2: "Utah State", score2: 86, winner: "Utah State", done: true },
     { seed1: 5, team1: "Wisconsin", score1: 82, seed2: 12, team2: "High Point", score2: 83, winner: "High Point", done: true },
     { seed1: 4, team1: "Arkansas", score1: 97, seed2: 13, team2: "Hawai'i", score2: 78, winner: "Arkansas", done: true },
     { seed1: 6, team1: "BYU", score1: 71, seed2: 11, team2: "Texas", score2: 79, winner: "Texas", done: true },
@@ -106,11 +106,11 @@ const FIRST_ROUND = {
     { seed1: 1, team1: "Michigan", score1: 101, seed2: 16, team2: "Howard", score2: 80, winner: "Michigan", done: true },
     { seed1: 8, team1: "Georgia", score1: 77, seed2: 9, team2: "Saint Louis", score2: 102, winner: "Saint Louis", done: true },
     { seed1: 5, team1: "Texas Tech", score1: 91, seed2: 12, team2: "Akron", score2: 71, winner: "Texas Tech", done: true },
-    { seed1: 4, team1: "Alabama", score1: null, seed2: 13, team2: "Hofstra", score2: null, winner: "Alabama", done: false },
-    { seed1: 6, team1: "Tennessee", score1: null, seed2: 11, team2: "Miami (OH)", score2: null, winner: "Tennessee", done: false },
+    { seed1: 4, team1: "Alabama", score1: 90, seed2: 13, team2: "Hofstra", score2: 70, winner: "Alabama", done: true },
+    { seed1: 6, team1: "Tennessee", score1: 78, seed2: 11, team2: "Miami (OH)", score2: 56, winner: "Tennessee", done: true },
     { seed1: 3, team1: "Virginia", score1: 82, seed2: 14, team2: "Wright State", score2: 73, winner: "Virginia", done: true },
     { seed1: 7, team1: "Kentucky", score1: 89, seed2: 10, team2: "Santa Clara", score2: 84, winner: "Kentucky", done: true },
-    { seed1: 2, team1: "Iowa State", score1: null, seed2: 15, team2: "Tennessee State", score2: null, winner: "Iowa State", done: false },
+    { seed1: 2, team1: "Iowa State", score1: 108, seed2: 15, team2: "Tennessee State", score2: 74, winner: "Iowa State", done: true },
   ],
 };
 
