@@ -328,15 +328,48 @@ function isLightColor(hex) {
   return (r * 299 + g * 587 + b * 114) / 1000 > 160;
 }
 
-function JerseyBadge({ seed, teamName }) {
+function JerseyBadge({ seed, teamName, pending }) {
+  // Split jersey for pending matchups
+  if (pending && teamName && teamName.includes("/")) {
+    const [team1, team2] = teamName.split("/");
+    const color1 = getTeamColor(team1);
+    const color2 = getTeamColor(team2);
+    return (
+      <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", marginRight: 6, flexShrink: 0, position: "relative", width: 28, height: 28 }}>
+        <svg width="28" height="28" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <clipPath id={`left-${team1}-${team2}`}><rect x="0" y="0" width="14" height="28" /></clipPath>
+            <clipPath id={`right-${team1}-${team2}`}><rect x="14" y="0" width="14" height="28" /></clipPath>
+          </defs>
+          {/* Left half - team 1 color */}
+          <path clipPath={`url(#left-${team1}-${team2})`} d="M9 3L7.5 3.5L7 5L7.5 6L8 5L8 25L20 25L20 5L20.5 6L21 5L20.5 3.5L19 3L17 3C17 3 15.5 5.5 14 5.5C12.5 5.5 11 3 11 3L9 3Z" fill={color1} />
+          {/* Right half - team 2 color */}
+          <path clipPath={`url(#right-${team1}-${team2})`} d="M9 3L7.5 3.5L7 5L7.5 6L8 5L8 25L20 25L20 5L20.5 6L21 5L20.5 3.5L19 3L17 3C17 3 15.5 5.5 14 5.5C12.5 5.5 11 3 11 3L9 3Z" fill={color2} />
+          {/* Outline */}
+          <path d="M9 3L7.5 3.5L7 5L7.5 6L8 5L8 25L20 25L20 5L20.5 6L21 5L20.5 3.5L19 3L17 3C17 3 15.5 5.5 14 5.5C12.5 5.5 11 3 11 3L9 3Z" fill="none" stroke="rgba(255,255,255,0.25)" strokeWidth="0.75" />
+          {/* Center divider */}
+          <line x1="14" y1="3" x2="14" y2="25" stroke="rgba(255,255,255,0.4)" strokeWidth="0.5" />
+          {/* V-neck collar */}
+          <path d="M11 3C11 3 12.5 5.5 14 5.5C15.5 5.5 17 3 17 3" stroke="rgba(255,255,255,0.2)" strokeWidth="0.75" fill="none" />
+        </svg>
+        <span style={{
+          position: "absolute", top: "52%", left: "50%", transform: "translate(-50%, -50%)",
+          fontSize: 8, fontWeight: 900, color: "#fff", lineHeight: 1,
+          textShadow: "0 1px 3px rgba(0,0,0,0.6)",
+          letterSpacing: 0.5,
+        }}>
+          VS
+        </span>
+      </span>
+    );
+  }
+
   const color = teamName ? getTeamColor(teamName) : (seed <= 2 ? "#16a34a" : seed <= 4 ? "#2563eb" : seed <= 8 ? "#7c3aed" : seed <= 12 ? "#d97706" : "#dc2626");
   const textColor = isLightColor(color) ? "#000" : "#fff";
   return (
     <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", marginRight: 6, flexShrink: 0, position: "relative", width: 28, height: 28 }}>
       <svg width="28" height="28" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
-        {/* Sleeveless basketball jersey: wide shoulder straps, open armholes, tapered body */}
         <path d="M9 3L7.5 3.5L7 5L7.5 6L8 5L8 25L20 25L20 5L20.5 6L21 5L20.5 3.5L19 3L17 3C17 3 15.5 5.5 14 5.5C12.5 5.5 11 3 11 3L9 3Z" fill={color} stroke={isLightColor(color) ? "rgba(0,0,0,0.2)" : "rgba(255,255,255,0.25)"} strokeWidth="0.75" />
-        {/* V-neck collar */}
         <path d="M11 3C11 3 12.5 5.5 14 5.5C15.5 5.5 17 3 17 3" stroke={isLightColor(color) ? "rgba(0,0,0,0.15)" : "rgba(255,255,255,0.2)"} strokeWidth="0.75" fill="none" />
       </svg>
       <span style={{
@@ -351,8 +384,8 @@ function JerseyBadge({ seed, teamName }) {
 }
 
 // Keep old SeedBadge as fallback for places without team name
-function SeedBadge({ seed, teamName }) {
-  return <JerseyBadge seed={seed} teamName={teamName} />;
+function SeedBadge({ seed, teamName, pending }) {
+  return <JerseyBadge seed={seed} teamName={teamName} pending={pending} />;
 }
 
 function TeamButton({ team, selected, disabled, used, onClick }) {
@@ -364,7 +397,7 @@ function TeamButton({ team, selected, disabled, used, onClick }) {
       cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.5 : 1,
       fontSize: 15, fontWeight: 500, width: "100%", textAlign: "left", transition: "all 0.15s ease",
     }}>
-      <SeedBadge seed={team.seed} teamName={team.name} />
+      <SeedBadge seed={team.seed} teamName={team.name} pending={team.projected && team.pendingTeams} />
       <span style={{ flex: 1 }}>
         {team.name}
         {team.projected && !team.pendingTeams && <span style={{ fontSize: 10, color: "#9ca3af", marginLeft: 4 }}>(TBD)</span>}
