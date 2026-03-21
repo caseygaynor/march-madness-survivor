@@ -700,6 +700,7 @@ function JoinPoolView({ onBack, onJoined, initialCode }) {
     if (!name.trim()) return;
     const data = await api(`/pools/${pool.id}/join`, { method: "POST", body: { name: name.trim() } });
     if (data.error) { setError(data.error); return; }
+    // data.reconnected is true if the server matched an existing player
     onJoined(pool.id, data);
   }
 
@@ -819,6 +820,9 @@ function JoinPoolView({ onBack, onJoined, initialCode }) {
                 ...s.btnPrimary, padding: "12px 24px", fontSize: 15, fontWeight: 700,
               }}>Join</button>
             </div>
+            <p style={{ color: "#64748b", fontSize: 12, marginTop: 8, textAlign: "center" }}>
+              Already joined? Just enter your name to reconnect to your picks.
+            </p>
           </>
         )}
 

@@ -598,20 +598,34 @@ app.get('/api/pools/:id', (req, res) => {
   res.json({ ...pool, players });
 });
 
-// Join a pool
+// Join a pool (case-insensitive name matching for reconnection)
 app.post('/api/pools/:id/join', (req, res) => {
   const { name } = req.body;
   if (!name) return res.status(400).json({ error: 'Name required' });
   const pool = db.prepare('SELECT id FROM pools WHERE id = ?').get(req.params.id);
   if (!pool) return res.status(404).json({ error: 'Pool not found' });
 
+  const trimmed = name.trim();
+
+  // Check for existing player (case-insensitive)
+  const existing = db.prepare(
+    'SELECT id, name, alive FROM players WHERE pool_id = ? AND LOWER(name) = LOWER(?)'
+  ).get(req.params.id, trimmed);
+
+  if (existing) {
+    // Reconnect to existing entry
+    res.json({ ...existing, reconnected: true });
+    return;
+  }
+
   try {
-    const info = db.prepare('INSERT INTO players (pool_id, name) VALUES (?, ?)').run(req.params.id, name.trim());
-    res.json({ id: info.lastInsertRowid, name: name.trim(), alive: 1 });
+    const info = db.prepare('INSERT INTO players (pool_id, name) VALUES (?, ?)').run(req.params.id, trimmed);
+    res.json({ id: info.lastInsertRowid, name: trimmed, alive: 1 });
   } catch (e) {
     if (e.message.includes('UNIQUE')) {
-      const existing = db.prepare('SELECT id, name, alive FROM players WHERE pool_id = ? AND name = ?').get(req.params.id, name.trim());
-      res.json(existing);
+      // Fallback: exact match
+      const exact = db.prepare('SELECT id, name, alive FROM players WHERE pool_id = ? AND name = ?').get(req.params.id, trimmed);
+      res.json({ ...exact, reconnected: true });
     } else {
       throw e;
     }
