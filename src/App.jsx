@@ -435,11 +435,104 @@ function CreatePoolView({ onBack, onCreated }) {
   );
 }
 
+function RulesGate({ onAccept, onBack }) {
+  const [scrolledToBottom, setScrolledToBottom] = useState(false);
+  const rulesRef = useRef(null);
+
+  function handleScroll() {
+    const el = rulesRef.current;
+    if (!el) return;
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 30;
+    if (atBottom) setScrolledToBottom(true);
+  }
+
+  useEffect(() => {
+    // If content fits without scrolling, auto-enable the button
+    const el = rulesRef.current;
+    if (el && el.scrollHeight <= el.clientHeight + 30) {
+      setScrolledToBottom(true);
+    }
+  }, []);
+
+  return (
+    <div style={s.page}>
+      <button onClick={onBack} style={s.backBtn}>&#8592; Back</button>
+      <div style={{ maxWidth: 440, margin: "40px auto 0", padding: "0 16px" }}>
+        <div style={{ textAlign: "center", marginBottom: 20 }}>
+          <div style={{ fontSize: 40, marginBottom: 8 }}>📋</div>
+          <h2 style={{ color: "#fff", fontSize: 24, fontWeight: 800, margin: 0 }}>Before You Join</h2>
+          <p style={{ color: "#94a3b8", fontSize: 13, marginTop: 6 }}>Read the rules so you know what you're getting into.</p>
+        </div>
+
+        <div
+          ref={rulesRef}
+          onScroll={handleScroll}
+          style={{
+            ...s.card,
+            maxHeight: 320,
+            overflowY: "auto",
+            textAlign: "left",
+            WebkitOverflowScrolling: "touch",
+          }}
+        >
+          <h3 style={{ color: "#f97316", margin: "0 0 12px 0", fontSize: 15 }}>How It Works</h3>
+          <div style={{ color: "#cbd5e1", fontSize: 13, lineHeight: 1.8 }}>
+            <div style={{ marginBottom: 6 }}><strong style={{ color: "#fff" }}>Round of 32:</strong> Pick 1 team per region (4 picks). All must win or you're eliminated.</div>
+            <div style={{ marginBottom: 6 }}><strong style={{ color: "#fff" }}>Sweet 16:</strong> Pick 2 teams from opposite sides of the bracket. Both must win.</div>
+            <div style={{ marginBottom: 6 }}><strong style={{ color: "#fff" }}>Elite 8:</strong> Pick 1 team. Must win.</div>
+            <div style={{ marginBottom: 6 }}><strong style={{ color: "#fff" }}>Final Four:</strong> Pick 1 team. Must win.</div>
+            <div style={{ marginBottom: 10 }}><strong style={{ color: "#fff" }}>Championship:</strong> Pick 1 team. Hope you haven't used them!</div>
+
+            <div style={{
+              padding: "8px 12px", backgroundColor: "rgba(239,68,68,0.15)",
+              borderRadius: 8, color: "#fca5a5", fontSize: 12, marginBottom: 8,
+            }}>
+              Once you pick a team, you cannot pick them again in any later round. Choose wisely!
+            </div>
+
+            <div style={{
+              padding: "8px 12px", backgroundColor: "rgba(99,102,241,0.15)",
+              borderRadius: 8, color: "#a5b4fc", fontSize: 12, marginBottom: 8,
+            }}>
+              <strong style={{ color: "#c7d2fe" }}>Tiebreaker:</strong> If multiple players survive the same number of rounds, the player with the highest combined seed total across all picks wins. Picking lower-seeded teams is riskier but gives you the edge in a tiebreak.
+            </div>
+
+            <div style={{
+              padding: "8px 12px", backgroundColor: "rgba(251,191,36,0.12)",
+              borderRadius: 8, color: "#fcd34d", fontSize: 12,
+            }}>
+              <strong style={{ color: "#fde68a" }}>Deadlines:</strong> Each round has a pick deadline. If you miss it, your picks auto-lock as-is. No exceptions.
+            </div>
+          </div>
+        </div>
+
+        <button
+          onClick={onAccept}
+          disabled={!scrolledToBottom}
+          style={{
+            ...s.btnPrimary,
+            width: "100%",
+            marginTop: 16,
+            fontSize: 15,
+            padding: "14px 0",
+            opacity: scrolledToBottom ? 1 : 0.4,
+            cursor: scrolledToBottom ? "pointer" : "not-allowed",
+            transition: "opacity 0.3s",
+          }}
+        >
+          {scrolledToBottom ? "I understand, let me in" : "Scroll to read all rules"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function JoinPoolView({ onBack, onJoined, initialCode }) {
   const [code, setCode] = useState(initialCode || "");
   const [name, setName] = useState("");
   const [pool, setPool] = useState(null);
   const [error, setError] = useState("");
+  const [rulesAccepted, setRulesAccepted] = useState(false);
 
   async function lookupPool() {
     if (!code.trim()) return;
@@ -454,6 +547,10 @@ function JoinPoolView({ onBack, onJoined, initialCode }) {
     const data = await api(`/pools/${pool.id}/join`, { method: "POST", body: { name: name.trim() } });
     if (data.error) { setError(data.error); return; }
     onJoined(pool.id, data);
+  }
+
+  if (!rulesAccepted) {
+    return <RulesGate onAccept={() => setRulesAccepted(true)} onBack={onBack} />;
   }
 
   return (
