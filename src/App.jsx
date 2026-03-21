@@ -315,8 +315,10 @@ function JerseyBadge({ seed, teamName }) {
   return (
     <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", marginRight: 6, flexShrink: 0, position: "relative", width: 28, height: 28 }}>
       <svg width="28" height="28" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <path d="M14 3L8 3L5 6L3 10L5 11L7 8L7 25L21 25L21 8L23 11L25 10L23 6L20 3L14 3Z" fill={color} stroke={isLightColor(color) ? "rgba(0,0,0,0.2)" : "rgba(255,255,255,0.25)"} strokeWidth="0.75" />
-        <path d="M10 3C10 3 12 6 14 6C16 6 18 3 18 3" stroke={isLightColor(color) ? "rgba(0,0,0,0.15)" : "rgba(255,255,255,0.2)"} strokeWidth="0.75" fill="none" />
+        {/* Sleeveless basketball jersey: wide shoulder straps, open armholes, tapered body */}
+        <path d="M9 3L7.5 3.5L7 5L7.5 6L8 5L8 25L20 25L20 5L20.5 6L21 5L20.5 3.5L19 3L17 3C17 3 15.5 5.5 14 5.5C12.5 5.5 11 3 11 3L9 3Z" fill={color} stroke={isLightColor(color) ? "rgba(0,0,0,0.2)" : "rgba(255,255,255,0.25)"} strokeWidth="0.75" />
+        {/* V-neck collar */}
+        <path d="M11 3C11 3 12.5 5.5 14 5.5C15.5 5.5 17 3 17 3" stroke={isLightColor(color) ? "rgba(0,0,0,0.15)" : "rgba(255,255,255,0.2)"} strokeWidth="0.75" fill="none" />
       </svg>
       <span style={{
         position: "absolute", top: "52%", left: "50%", transform: "translate(-50%, -50%)",
