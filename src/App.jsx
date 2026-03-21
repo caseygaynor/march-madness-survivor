@@ -410,10 +410,10 @@ function TeamButton({ team, selected, disabled, used, onClick }) {
   return (
     <button onClick={onClick} disabled={disabled} style={{
       display: "flex", alignItems: "center", padding: "10px 14px", borderRadius: 8,
-      border: selected ? `2px solid ${accentColor}` : used ? "2px solid #dc2626" : "2px solid #e5e7eb",
-      backgroundColor: selected ? selectedBg : used ? "rgba(220,38,38,0.05)" : "#fff",
+      border: selected ? `2px solid ${accentColor}` : used ? "2px solid rgba(220,38,38,0.3)" : "2px solid #e5e7eb",
+      backgroundColor: selected ? selectedBg : used ? "#fef2f2" : "#fff",
       boxShadow: selected ? selectedShadow : "none",
-      cursor: disabled ? "not-allowed" : "pointer", opacity: used ? 0.55 : 1,
+      cursor: disabled ? "not-allowed" : "pointer",
       fontSize: 15, fontWeight: selected ? 600 : 500, width: "100%", textAlign: "left",
       transition: "all 0.2s ease",
       position: "relative", overflow: "hidden",
@@ -425,12 +425,30 @@ function TeamButton({ team, selected, disabled, used, onClick }) {
           backgroundColor: accentColor, borderRadius: "6px 0 0 6px",
         }} />
       )}
-      <SeedBadge seed={team.seed} teamName={team.name} pending={team.projected && team.pendingTeams} />
-      <span style={{ flex: 1, color: selected ? "#1e293b" : undefined }}>
-        {team.name}
-        {team.projected && !team.pendingTeams && <span style={{ fontSize: 10, color: "#9ca3af", marginLeft: 4 }}>(TBD)</span>}
+      {/* Diagonal strikethrough overlay for used teams */}
+      {used && (
+        <span style={{
+          position: "absolute", inset: 0, overflow: "hidden", borderRadius: 6, pointerEvents: "none",
+        }}>
+          <span style={{
+            position: "absolute", top: "50%", left: "-10%", width: "120%", height: 2,
+            backgroundColor: "rgba(220,38,38,0.25)", transform: "rotate(-8deg)", transformOrigin: "center",
+          }} />
+        </span>
+      )}
+      <span style={{ opacity: used ? 0.45 : 1, display: "flex", alignItems: "center", flex: 1, gap: 0 }}>
+        <SeedBadge seed={team.seed} teamName={team.name} pending={team.projected && team.pendingTeams} />
+        <span style={{ flex: 1, color: selected ? "#1e293b" : undefined }}>
+          {team.name}
+          {team.projected && !team.pendingTeams && <span style={{ fontSize: 10, color: "#9ca3af", marginLeft: 4 }}>(TBD)</span>}
+        </span>
       </span>
-      {used && <span style={{ color: "#dc2626", fontSize: 11, fontWeight: 700 }}>USED</span>}
+      {used && <span style={{
+        display: "inline-flex", alignItems: "center", gap: 4,
+        backgroundColor: "rgba(220,38,38,0.1)", color: "#dc2626",
+        fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 10,
+        letterSpacing: 0.5, flexShrink: 0, textTransform: "uppercase",
+      }}>&#10005; Used</span>}
       {selected && !used && <span style={{
         display: "inline-flex", alignItems: "center", justifyContent: "center",
         width: 22, height: 22, borderRadius: "50%",
