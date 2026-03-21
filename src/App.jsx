@@ -389,21 +389,41 @@ function SeedBadge({ seed, teamName, pending }) {
 }
 
 function TeamButton({ team, selected, disabled, used, onClick }) {
+  const teamColor = getTeamColor(team.name);
+  const hasTeamColor = teamColor !== "#64748b";
+  const glowColor = selected && hasTeamColor ? teamColor : null;
+
+  // Parse hex to rgba for glow/tint
+  function hexToRgba(hex, alpha) {
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    return `rgba(${r},${g},${b},${alpha})`;
+  }
+
+  const selectedBorder = glowColor ? glowColor : "#22c55e";
+  const selectedBg = glowColor ? hexToRgba(glowColor, 0.08) : "rgba(34,197,94,0.06)";
+  const selectedShadow = glowColor
+    ? `0 0 12px ${hexToRgba(glowColor, 0.35)}, 0 0 4px ${hexToRgba(glowColor, 0.15)}`
+    : "0 0 12px rgba(34,197,94,0.25)";
+
   return (
     <button onClick={onClick} disabled={disabled} style={{
       display: "flex", alignItems: "center", padding: "10px 14px", borderRadius: 8,
-      border: selected ? "2px solid #2563eb" : used ? "2px solid #dc2626" : "2px solid #e5e7eb",
-      backgroundColor: selected ? "#eff6ff" : used ? "rgba(220,38,38,0.05)" : disabled ? "#f9fafb" : "#fff",
-      cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.5 : 1,
-      fontSize: 15, fontWeight: 500, width: "100%", textAlign: "left", transition: "all 0.15s ease",
+      border: selected ? `2px solid ${selectedBorder}` : used ? "2px solid #dc2626" : "2px solid #e5e7eb",
+      backgroundColor: selected ? selectedBg : used ? "rgba(220,38,38,0.05)" : "#fff",
+      boxShadow: selected ? selectedShadow : "none",
+      cursor: disabled ? "not-allowed" : "pointer", opacity: used ? 0.55 : 1,
+      fontSize: 15, fontWeight: selected ? 600 : 500, width: "100%", textAlign: "left",
+      transition: "all 0.2s ease",
     }}>
       <SeedBadge seed={team.seed} teamName={team.name} pending={team.projected && team.pendingTeams} />
-      <span style={{ flex: 1 }}>
+      <span style={{ flex: 1, color: selected ? "#1e293b" : undefined }}>
         {team.name}
         {team.projected && !team.pendingTeams && <span style={{ fontSize: 10, color: "#9ca3af", marginLeft: 4 }}>(TBD)</span>}
       </span>
       {used && <span style={{ color: "#dc2626", fontSize: 11, fontWeight: 700 }}>USED</span>}
-      {selected && !used && <span style={{ color: "#2563eb", fontWeight: 700 }}>&#10003;</span>}
+      {selected && !used && <span style={{ color: "#22c55e", fontWeight: 700, fontSize: 16 }}>&#10003;</span>}
     </button>
   );
 }
