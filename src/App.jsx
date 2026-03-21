@@ -277,17 +277,61 @@ const s = {
 // SMALL COMPONENTS
 // ============================================================
 
-function SeedBadge({ seed }) {
-  const color = seed <= 2 ? "#16a34a" : seed <= 4 ? "#2563eb" : seed <= 8 ? "#7c3aed" : seed <= 12 ? "#d97706" : "#dc2626";
+// Primary school colors for all tournament teams
+const TEAM_COLORS = {
+  "Duke": "#003087", "Siena": "#006747", "Ohio State": "#BB0000", "TCU": "#4D1979",
+  "St. John's": "#CC0000", "Northern Iowa": "#4B116F", "Kansas": "#0051BA", "Cal Baptist": "#002554",
+  "Louisville": "#AD0000", "South Florida": "#006747", "Michigan State": "#18453B", "North Dakota State": "#006A31",
+  "UCLA": "#2D68C4", "UCF": "#BA9B37", "UConn": "#0E1A3C", "Furman": "#582C83",
+  "Florida": "#0021A5", "Prairie View A&M": "#5B2C82", "Clemson": "#F56600", "Iowa": "#FFCD00",
+  "Vanderbilt": "#866D4B", "McNeese State": "#005DAA", "Nebraska": "#E41C38", "Troy": "#8B2346",
+  "North Carolina": "#7BAFD4", "VCU": "#F8B800", "Illinois": "#E84A27", "Penn": "#011F5B",
+  "St. Mary's": "#D50032", "Texas A&M": "#500000", "Houston": "#C8102E", "Idaho": "#B5985A",
+  "Arizona": "#CC0033", "Long Island": "#005596", "Villanova": "#00205B", "Utah State": "#0F2439",
+  "Wisconsin": "#C5050C", "High Point": "#330072", "Arkansas": "#9D2235", "Hawai'i": "#024731",
+  "BYU": "#002E5D", "Texas": "#BF5700", "Gonzaga": "#002967", "Kennesaw State": "#FDBB30",
+  "Miami (FL)": "#F47321", "Missouri": "#F1B82D", "Purdue": "#CEB888", "Queens": "#003DA5",
+  "Michigan": "#00274C", "Howard": "#003A63", "Georgia": "#BA0C2F", "Saint Louis": "#003DA5",
+  "Texas Tech": "#CC0000", "Akron": "#041E42", "Alabama": "#9E1B32", "Hofstra": "#00519E",
+  "Tennessee": "#FF8200", "Miami (OH)": "#B61E2E", "Virginia": "#232D4B", "Wright State": "#007A33",
+  "Kentucky": "#0033A0", "Santa Clara": "#862633", "Iowa State": "#C8102E", "Tennessee State": "#003876",
+};
+
+function getTeamColor(teamName) {
+  return TEAM_COLORS[teamName] || "#64748b";
+}
+
+// Determine if a color is light enough to need dark text
+function isLightColor(hex) {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return (r * 299 + g * 587 + b * 114) / 1000 > 160;
+}
+
+function JerseyBadge({ seed, teamName }) {
+  const color = teamName ? getTeamColor(teamName) : (seed <= 2 ? "#16a34a" : seed <= 4 ? "#2563eb" : seed <= 8 ? "#7c3aed" : seed <= 12 ? "#d97706" : "#dc2626");
+  const textColor = isLightColor(color) ? "#000" : "#fff";
   return (
-    <span style={{
-      display: "inline-flex", alignItems: "center", justifyContent: "center",
-      width: 24, height: 24, borderRadius: "50%", backgroundColor: color,
-      color: "#fff", fontSize: 11, fontWeight: 700, marginRight: 6, flexShrink: 0,
-    }}>
-      {seed}
+    <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", marginRight: 6, flexShrink: 0, position: "relative", width: 28, height: 28 }}>
+      <svg width="28" height="28" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M14 3L8 3L5 6L3 10L5 11L7 8L7 25L21 25L21 8L23 11L25 10L23 6L20 3L14 3Z" fill={color} stroke={isLightColor(color) ? "rgba(0,0,0,0.2)" : "rgba(255,255,255,0.25)"} strokeWidth="0.75" />
+        <path d="M10 3C10 3 12 6 14 6C16 6 18 3 18 3" stroke={isLightColor(color) ? "rgba(0,0,0,0.15)" : "rgba(255,255,255,0.2)"} strokeWidth="0.75" fill="none" />
+      </svg>
+      <span style={{
+        position: "absolute", top: "52%", left: "50%", transform: "translate(-50%, -50%)",
+        fontSize: seed >= 10 ? 9 : 10, fontWeight: 800, color: textColor, lineHeight: 1,
+        textShadow: isLightColor(color) ? "none" : "0 1px 2px rgba(0,0,0,0.3)",
+      }}>
+        {seed}
+      </span>
     </span>
   );
+}
+
+// Keep old SeedBadge as fallback for places without team name
+function SeedBadge({ seed, teamName }) {
+  return <JerseyBadge seed={seed} teamName={teamName} />;
 }
 
 function TeamButton({ team, selected, disabled, used, onClick }) {
@@ -299,7 +343,7 @@ function TeamButton({ team, selected, disabled, used, onClick }) {
       cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.5 : 1,
       fontSize: 15, fontWeight: 500, width: "100%", textAlign: "left", transition: "all 0.15s ease",
     }}>
-      <SeedBadge seed={team.seed} />
+      <SeedBadge seed={team.seed} teamName={team.name} />
       <span style={{ flex: 1 }}>
         {team.name}
         {team.projected && <span style={{ fontSize: 10, color: "#9ca3af", marginLeft: 4 }}>(proj.)</span>}
@@ -577,9 +621,34 @@ function JoinPoolView({ onBack, onJoined, initialCode }) {
           <>
             <div style={{ ...s.card, marginBottom: 20 }}>
               <div style={{ color: "#fff", fontWeight: 700, fontSize: 18 }}>{pool.name}</div>
-              <div style={{ color: "#64748b", fontSize: 13, marginTop: 4 }}>
-                {pool.players.length} player{pool.players.length !== 1 ? "s" : ""} joined
-              </div>
+              {pool.players.length === 0 ? (
+                <div style={{ color: "#64748b", fontSize: 13, marginTop: 4 }}>Be the first to join!</div>
+              ) : (
+                <div style={{ marginTop: 8 }}>
+                  <div style={{ color: "#64748b", fontSize: 11, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>
+                    {pool.players.length} player{pool.players.length !== 1 ? "s" : ""} in the pool
+                  </div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                    {pool.players.slice(0, 10).map((p, i) => (
+                      <span key={i} style={{
+                        padding: "3px 10px", borderRadius: 12, fontSize: 12, fontWeight: 600,
+                        backgroundColor: "rgba(249,115,22,0.12)", color: "#fb923c",
+                        border: "1px solid rgba(249,115,22,0.2)",
+                      }}>
+                        {p.name}
+                      </span>
+                    ))}
+                    {pool.players.length > 10 && (
+                      <span style={{
+                        padding: "3px 10px", borderRadius: 12, fontSize: 12, fontWeight: 600,
+                        color: "#64748b",
+                      }}>
+                        +{pool.players.length - 10} more
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
             <div style={{ display: "flex", gap: 8 }}>
               <input
@@ -1741,7 +1810,7 @@ function ScoreCard({ game, pickedTeams }) {
             }}>
               <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                 {team.seed && team.seed < 20 && (
-                  <span style={{ color: "#64748b", fontSize: 11, fontWeight: 600, minWidth: 16 }}>{team.seed}</span>
+                  <JerseyBadge seed={team.seed} teamName={team.name} />
                 )}
                 <span style={{
                   color: isWinner ? "#22c55e" : game.completed && !isWinner ? "#64748b" : "#fff",
@@ -2038,9 +2107,9 @@ function LeaderboardView({ poolId, player: currentPlayer, onBack }) {
                                     border: "1px solid rgba(255,255,255,0.1)",
                                   }}>
                                     {pk.seed > 0 && (
-                                      <span style={{ fontSize: 10, color: "#64748b", fontWeight: 600 }}>({pk.seed})</span>
+                                      <JerseyBadge seed={pk.seed} teamName={pk.team} />
                                     )}
-                                    {pk.team}
+                                    <span>{pk.team}</span>
                                   </span>
                                 ))}
                               </div>
