@@ -401,29 +401,42 @@ function TeamButton({ team, selected, disabled, used, onClick }) {
     return `rgba(${r},${g},${b},${alpha})`;
   }
 
-  const selectedBorder = glowColor ? glowColor : "#22c55e";
-  const selectedBg = glowColor ? hexToRgba(glowColor, 0.08) : "rgba(34,197,94,0.06)";
+  const accentColor = glowColor || "#22c55e";
+  const selectedBg = glowColor ? hexToRgba(glowColor, 0.12) : "rgba(34,197,94,0.08)";
   const selectedShadow = glowColor
-    ? `0 0 12px ${hexToRgba(glowColor, 0.35)}, 0 0 4px ${hexToRgba(glowColor, 0.15)}`
-    : "0 0 12px rgba(34,197,94,0.25)";
+    ? `0 0 16px ${hexToRgba(glowColor, 0.5)}, 0 2px 8px ${hexToRgba(glowColor, 0.25)}, inset 0 0 20px ${hexToRgba(glowColor, 0.06)}`
+    : "0 0 16px rgba(34,197,94,0.4), 0 2px 8px rgba(34,197,94,0.2)";
 
   return (
     <button onClick={onClick} disabled={disabled} style={{
       display: "flex", alignItems: "center", padding: "10px 14px", borderRadius: 8,
-      border: selected ? `2px solid ${selectedBorder}` : used ? "2px solid #dc2626" : "2px solid #e5e7eb",
+      border: selected ? `2px solid ${accentColor}` : used ? "2px solid #dc2626" : "2px solid #e5e7eb",
       backgroundColor: selected ? selectedBg : used ? "rgba(220,38,38,0.05)" : "#fff",
       boxShadow: selected ? selectedShadow : "none",
       cursor: disabled ? "not-allowed" : "pointer", opacity: used ? 0.55 : 1,
       fontSize: 15, fontWeight: selected ? 600 : 500, width: "100%", textAlign: "left",
       transition: "all 0.2s ease",
+      position: "relative", overflow: "hidden",
     }}>
+      {/* Team-colored accent bar on left edge when selected */}
+      {selected && (
+        <span style={{
+          position: "absolute", left: 0, top: 0, bottom: 0, width: 4,
+          backgroundColor: accentColor, borderRadius: "6px 0 0 6px",
+        }} />
+      )}
       <SeedBadge seed={team.seed} teamName={team.name} pending={team.projected && team.pendingTeams} />
       <span style={{ flex: 1, color: selected ? "#1e293b" : undefined }}>
         {team.name}
         {team.projected && !team.pendingTeams && <span style={{ fontSize: 10, color: "#9ca3af", marginLeft: 4 }}>(TBD)</span>}
       </span>
       {used && <span style={{ color: "#dc2626", fontSize: 11, fontWeight: 700 }}>USED</span>}
-      {selected && !used && <span style={{ color: "#22c55e", fontWeight: 700, fontSize: 16 }}>&#10003;</span>}
+      {selected && !used && <span style={{
+        display: "inline-flex", alignItems: "center", justifyContent: "center",
+        width: 22, height: 22, borderRadius: "50%",
+        backgroundColor: accentColor, color: "#fff",
+        fontSize: 13, fontWeight: 700, flexShrink: 0,
+      }}>&#10003;</span>}
     </button>
   );
 }
