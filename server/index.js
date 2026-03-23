@@ -96,8 +96,8 @@ const ROUND_SCHEDULE = [
   {
     round: 1,
     name: "Sweet 16",
-    lockTime: "2026-03-27T19:00:00-04:00",  // Thu March 27, 7 PM ET
-    endDate: "2026-03-28",                    // Last games Fri March 28
+    lockTime: "2026-03-26T19:10:00-04:00",  // Thu March 26, 7:10 PM ET
+    endDate: "2026-03-28",                    // Last games Sat March 28
     gradeable: true,
   },
   {
@@ -981,7 +981,7 @@ app.get('/api/sync-status', (req, res) => {
     roundName: schedule?.name || 'Unknown',
     locked: isRoundLocked(activeRound),
     lastSync: lastSync || null,
-    nextSyncIn: 'Runs every 30 minutes during game windows',
+    nextSyncIn: 'Runs every 15 minutes',
   });
 });
 
@@ -1107,61 +1107,13 @@ async function runScheduledSync() {
 }
 
 // ============================================================
-// SMART CRON: 15-min during game windows, 30-min otherwise
-// Game windows defined per round. Outside windows, save API calls.
+// CRON: Simple 15-minute sync throughout the tournament
+// ESPN public API is free, no cost per call. Keep it simple.
 // ============================================================
 
-const GAME_WINDOWS = [
-  // Round of 32: Sat Mar 21 12:10 PM - Sun Mar 22 2:00 AM, Sun Mar 22 12:10 PM - Mon Mar 23 2:00 AM
-  { round: 0, windows: [
-    { start: "2026-03-21T12:10:00-04:00", end: "2026-03-22T02:00:00-04:00" },
-    { start: "2026-03-22T12:10:00-04:00", end: "2026-03-23T02:00:00-04:00" },
-  ]},
-  // Sweet 16: Thu Mar 27 - Fri Mar 28
-  { round: 1, windows: [
-    { start: "2026-03-27T18:00:00-04:00", end: "2026-03-28T02:00:00-04:00" },
-    { start: "2026-03-28T18:00:00-04:00", end: "2026-03-29T02:00:00-04:00" },
-  ]},
-  // Elite 8: Sat Mar 29 - Sun Mar 30
-  { round: 2, windows: [
-    { start: "2026-03-29T13:00:00-04:00", end: "2026-03-30T02:00:00-04:00" },
-    { start: "2026-03-30T13:00:00-04:00", end: "2026-03-31T02:00:00-04:00" },
-  ]},
-  // Final Four: Sat Apr 4
-  { round: 3, windows: [
-    { start: "2026-04-04T17:00:00-04:00", end: "2026-04-05T02:00:00-04:00" },
-  ]},
-  // Championship: Mon Apr 6
-  { round: 4, windows: [
-    { start: "2026-04-06T20:00:00-04:00", end: "2026-04-07T02:00:00-04:00" },
-  ]},
-];
-
-function isInGameWindow() {
-  const now = new Date();
-  const activeRound = getActiveRound();
-  const roundWindows = GAME_WINDOWS.find(gw => gw.round === activeRound);
-  if (!roundWindows) return false;
-  return roundWindows.windows.some(w => now >= new Date(w.start) && now <= new Date(w.end));
-}
-
-// Run every 15 minutes. Only actually syncs during game windows.
-// Outside game windows, syncs every other run (effectively 30 min) as a safety net.
-let offWindowCounter = 0;
-
 cron.schedule('*/15 * * * *', () => {
-  if (isInGameWindow()) {
-    console.log('[CRON] Game window active, syncing every 15 min');
-    runScheduledSync();
-  } else {
-    offWindowCounter++;
-    if (offWindowCounter % 2 === 0) {
-      console.log('[CRON] Outside game window, running periodic check');
-      runScheduledSync();
-    } else {
-      console.log('[CRON] Outside game window, skipping this cycle');
-    }
-  }
+  console.log('[CRON] Running 15-min sync...');
+  runScheduledSync();
 });
 
 // Also run once on startup (after a 10-second delay to let things initialize)
@@ -1180,7 +1132,6 @@ app.get('*', (req, res) => {
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`March Madness Survivor running on port ${PORT}`);
-  console.log(`[CRON] ESPN score sync: every 15 min during games, every 30 min otherwise`);
-  console.log(`[CRON] Currently in game window: ${isInGameWindow()}`);
+  console.log(`[CRON] ESPN score sync: every 15 minutes`);
   console.log(`[CRON] Active round: ${getActiveRound()} (${ROUND_SCHEDULE[getActiveRound()]?.name || 'N/A'})`);
 });
