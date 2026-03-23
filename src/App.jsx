@@ -2161,6 +2161,8 @@ function PlayerBracketView({ poolId, allResults, playerPicksByRound, currentPick
 
     const isPicked = isPickedInRound(team.name, roundIdx) || (roundIdx === currentRound && currentPickTeams.includes(team.name));
     const wasPickedPreviously = !isPicked && allPickedTeams.has(team.name);
+    // A team is "used" if it was picked and locked in ANY round (can't pick again)
+    const isUsedTeam = usedTeams.includes(team.name);
     const teamColor = getTeamColor(team.name);
     const hasColor = teamColor !== "#64748b";
     const isForecast = team.forecasted;
@@ -2197,18 +2199,28 @@ function PlayerBracketView({ poolId, allResults, playerPicksByRound, currentPick
       bgStyle = hasColor ? hexToRgba(teamColor, 0.1) : "rgba(249,115,22,0.1)";
       glowStyle = hasColor ? `0 0 8px ${hexToRgba(teamColor, 0.25)}` : "0 0 8px rgba(249,115,22,0.2)";
       nameBold = true;
+    } else if (teamForecasted && isUsedTeam) {
+      // Forecasted to win, but already used -- show as advancing but clearly unavailable to pick
+      borderStyle = `1.5px solid rgba(239,68,68,0.4)`;
+      bgStyle = "rgba(239,68,68,0.06)";
+      nameColor = "#fca5a5";
+      nameBold = true;
+      statusIcon = <span style={{ fontSize: 8, color: "#ef4444", fontWeight: 700, padding: "1px 5px", borderRadius: 6, backgroundColor: "rgba(239,68,68,0.15)", whiteSpace: "nowrap" }}>CAN'T PICK</span>;
     } else if (teamForecasted) {
+      // Forecasted to win and still available to pick
       borderStyle = `1.5px dashed ${hasColor ? teamColor : "#a855f7"}`;
       bgStyle = hasColor ? hexToRgba(teamColor, 0.06) : "rgba(168,85,247,0.08)";
       nameColor = "#c4b5fd";
       nameBold = true;
-      statusIcon = <span style={{ color: "#a855f7", fontSize: 9, fontWeight: 700 }}>PLAN</span>;
+      statusIcon = <span style={{ color: "#22c55e", fontSize: 8, fontWeight: 700, padding: "1px 5px", borderRadius: 6, backgroundColor: "rgba(34,197,94,0.1)", whiteSpace: "nowrap" }}>AVAILABLE</span>;
     } else if (wasPickedPreviously && !teamLost) {
+      // Team still alive but already used in a prior round
       borderStyle = hasColor ? `1.5px dashed ${hexToRgba(teamColor, 0.4)}` : "1.5px dashed rgba(249,115,22,0.3)";
       bgStyle = hasColor ? hexToRgba(teamColor, 0.04) : "rgba(249,115,22,0.04)";
       nameColor = "#94a3b8";
-      statusIcon = <span style={{ fontSize: 8, color: "#94a3b8", fontWeight: 700, padding: "1px 5px", borderRadius: 6, backgroundColor: "rgba(255,255,255,0.06)", whiteSpace: "nowrap" }}>USED</span>;
+      statusIcon = <span style={{ fontSize: 8, color: "#ef4444", fontWeight: 700, padding: "1px 5px", borderRadius: 6, backgroundColor: "rgba(239,68,68,0.1)", whiteSpace: "nowrap" }}>USED</span>;
     } else if (isForecast) {
+      // Team advanced via forecast from a previous round
       borderStyle = `1px dashed rgba(168,85,247,0.3)`;
       bgStyle = "rgba(168,85,247,0.04)";
       nameColor = "#c4b5fd";
@@ -2302,7 +2314,8 @@ function PlayerBracketView({ poolId, allResults, playerPicksByRound, currentPick
       { style: { border: "1.5px dashed #475569" }, label: "Used" },
     ];
     if (forecastMode) {
-      items.push({ style: { border: "1.5px dashed #a855f7", backgroundColor: "rgba(168,85,247,0.15)" }, label: "Planned" });
+      items.push({ style: { border: "1.5px dashed #a855f7", backgroundColor: "rgba(168,85,247,0.08)" }, label: "Available" });
+      items.push({ style: { border: "1.5px solid rgba(239,68,68,0.4)", backgroundColor: "rgba(239,68,68,0.08)" }, label: "Can't pick" });
     }
     return (
       <div style={{ display: "flex", flexWrap: "wrap", gap: 10, justifyContent: "center", marginBottom: 14 }}>
@@ -2416,7 +2429,7 @@ function PlayerBracketView({ poolId, allResults, playerPicksByRound, currentPick
           backgroundColor: "rgba(168,85,247,0.08)", border: "1px solid rgba(168,85,247,0.2)",
           color: "#c4b5fd", fontSize: 12,
         }}>
-          Tap teams to forecast winners and plan your path to a champion. This doesn't lock any picks.
+          Tap teams to forecast game winners and plan your path to a champion. Teams you've already used are marked in red. This doesn't lock any picks.
         </div>
       )}
 
