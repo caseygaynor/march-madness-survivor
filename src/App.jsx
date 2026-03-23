@@ -841,7 +841,7 @@ function JoinPoolView({ onBack, onJoined, initialCode }) {
   );
 }
 
-function PoolLobby({ poolId, player, onPlay, onLeaderboard, onAdmin, onLiveScores, onLogout }) {
+function PoolLobby({ poolId, player, onPlay, onBracket, onLeaderboard, onAdmin, onLiveScores, onLogout }) {
   const [pool, setPool] = useState(null);
   const [playerPicks, setPlayerPicks] = useState(null);
   const [currentRound, setCurrentRound] = useState(0);
@@ -963,44 +963,54 @@ function PoolLobby({ poolId, player, onPlay, onLeaderboard, onAdmin, onLiveScore
           </div>
         </div>
 
-        <div style={{ display: "flex", gap: 8, justifyContent: "center", marginBottom: 20 }}>
-          {shareUrl && (
-            <button onClick={() => navigator.clipboard?.writeText(shareUrl)} style={{
-              background: "none", border: "1px solid #334155", borderRadius: 8,
-              color: "#94a3b8", padding: "8px 16px", fontSize: 13, cursor: "pointer",
-            }}>
-              Copy invite link
-            </button>
-          )}
-          {onLogout && (
-            <button onClick={onLogout} style={{
-              background: "none", border: "1px solid #334155", borderRadius: 8,
-              color: "#64748b", padding: "8px 16px", fontSize: 13, cursor: "pointer",
-            }}>
-              Switch pool / Log out
-            </button>
-          )}
-        </div>
-
-        <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
+        {/* Primary actions */}
+        <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap", marginBottom: 16 }}>
           <button onClick={onPlay} style={{
             ...s.btnPrimary,
             ...((!player.alive || hasLockedCurrentRound) ? {} : { animation: "pulse 2s infinite" }),
           }}>
             {hasLockedCurrentRound ? "View Picks" : "Make Picks"}
           </button>
+          <button onClick={onBracket} style={{
+            ...s.btnSecondary,
+            borderColor: "rgba(99,102,241,0.4)",
+            color: "#a5b4fc",
+            fontWeight: 700,
+          }}>My Bracket</button>
+          <button onClick={onLeaderboard} style={s.btnSecondary}>Leaderboard</button>
           {hasLockedCurrentRound && !isBeforeDeadline(currentRound) && (
             <button onClick={() => onLiveScores(currentRound)} style={{
               ...s.btnSecondary, borderColor: "rgba(34,197,94,0.3)", color: "#22c55e",
             }}>Live Scores</button>
           )}
-          <button onClick={onLeaderboard} style={s.btnSecondary}>Leaderboard</button>
+        </div>
+
+        {/* Secondary actions footer */}
+        <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap", marginTop: 8 }}>
+          {shareUrl && (
+            <button onClick={() => navigator.clipboard?.writeText(shareUrl)} style={{
+              background: "none", border: "1px solid #1e293b", borderRadius: 6,
+              color: "#64748b", padding: "6px 12px", fontSize: 11, cursor: "pointer",
+            }}>
+              Copy invite link
+            </button>
+          )}
           <button onClick={() => setShowRules(true)} style={{
-            ...s.btnSecondary, borderColor: "rgba(255,255,255,0.1)", color: "#94a3b8", fontSize: 14,
+            background: "none", border: "1px solid #1e293b", borderRadius: 6,
+            color: "#64748b", padding: "6px 12px", fontSize: 11, cursor: "pointer",
           }}>Rules</button>
           <button onClick={onAdmin} style={{
-            ...s.btnSecondary, borderColor: "rgba(255,255,255,0.1)", color: "#64748b", fontSize: 14,
+            background: "none", border: "1px solid #1e293b", borderRadius: 6,
+            color: "#475569", padding: "6px 12px", fontSize: 11, cursor: "pointer",
           }}>Admin</button>
+          {onLogout && (
+            <button onClick={onLogout} style={{
+              background: "none", border: "1px solid #1e293b", borderRadius: 6,
+              color: "#475569", padding: "6px 12px", fontSize: 11, cursor: "pointer",
+            }}>
+              Switch pool / Log out
+            </button>
+          )}
         </div>
 
         {/* Rules modal */}
@@ -2047,9 +2057,9 @@ function PlayView({ poolId, player, onBack, onLiveScores }) {
 // Includes forecasting mode to plan future picks
 // ============================================================
 
-function PlayerBracketView({ poolId, allResults, playerPicksByRound, currentPickTeams, usedTeams, currentRound, onSwitchToMakePicks }) {
+function PlayerBracketView({ poolId, allResults, playerPicksByRound, currentPickTeams, usedTeams, currentRound, onSwitchToMakePicks, defaultForecast }) {
   const [activeSide, setActiveSide] = useState("left"); // "left" = East/South, "right" = West/Midwest
-  const [forecastMode, setForecastMode] = useState(false);
+  const [forecastMode, setForecastMode] = useState(defaultForecast || false);
   const [forecasts, setForecasts] = useState({}); // { "r1-East-0": "Duke", ... }
   const [forecastChampion, setForecastChampion] = useState(null); // team name of forecasted champ
   const [showChampConfetti, setShowChampConfetti] = useState(false);
@@ -3461,6 +3471,78 @@ function AdminView({ poolId, onBack }) {
 }
 
 // ============================================================
+// STANDALONE BRACKET VIEW (launched from lobby)
+// ============================================================
+
+function StandaloneBracketView({ poolId, player, onBack }) {
+  const [allResults, setAllResults] = useState([]);
+  const [usedTeams, setUsedTeams] = useState([]);
+  const [allPlayerPicks, setAllPlayerPicks] = useState([]);
+  const [currentRound, setCurrentRound] = useState(0);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function load() {
+      const [poolResults, used, allPicks, roundData] = await Promise.all([
+        api(`/pools/${poolId}/results`),
+        api(`/players/${player.id}/used-teams`),
+        api(`/players/${player.id}/picks`),
+        api(`/pools/${poolId}/current-round`),
+      ]);
+      setAllResults(poolResults);
+      setUsedTeams(used);
+      setAllPlayerPicks(allPicks);
+      setCurrentRound(roundData.currentRound ?? 0);
+      setLoading(false);
+    }
+    load();
+  }, [poolId, player.id]);
+
+  if (loading) {
+    return (
+      <div style={{ ...s.page, ...s.center }}>
+        <div style={{ color: "#64748b" }}>Loading bracket...</div>
+      </div>
+    );
+  }
+
+  // Build current pick teams for bracket display
+  const currentPickTeams = [];
+  for (const p of allPlayerPicks) {
+    if (p.round === currentRound) currentPickTeams.push(p.team);
+  }
+
+  // Build picks by round for bracket
+  const playerPicksByRound = {};
+  for (const p of allPlayerPicks) {
+    if (!playerPicksByRound[p.round]) playerPicksByRound[p.round] = [];
+    playerPicksByRound[p.round].push(p);
+  }
+
+  return (
+    <div style={s.page}>
+      <div style={{ padding: "12px 16px 0", display: "flex", alignItems: "center", gap: 8 }}>
+        <button onClick={onBack} style={{
+          background: "none", border: "none", color: "#64748b", fontSize: 22,
+          cursor: "pointer", padding: "4px 8px",
+        }}>&larr;</button>
+        <span style={{ color: "#94a3b8", fontSize: 14, fontWeight: 600 }}>My Bracket</span>
+      </div>
+      <PlayerBracketView
+        poolId={poolId}
+        allResults={allResults}
+        playerPicksByRound={playerPicksByRound}
+        currentPickTeams={currentPickTeams}
+        usedTeams={usedTeams}
+        currentRound={currentRound}
+        onSwitchToMakePicks={onBack}
+        defaultForecast={true}
+      />
+    </div>
+  );
+}
+
+// ============================================================
 // MAIN APP - ROUTER
 // ============================================================
 
@@ -3568,6 +3650,7 @@ export default function App() {
           poolId={poolId}
           player={player}
           onPlay={() => setView("play")}
+          onBracket={() => setView("bracket")}
           onLeaderboard={() => setView("leaderboard")}
           onAdmin={() => setView("admin")}
           onLiveScores={(round) => { setLiveScoresRound(round); setView("live"); }}
@@ -3599,6 +3682,15 @@ export default function App() {
     case "leaderboard":
       return (
         <LeaderboardView
+          poolId={poolId}
+          player={player}
+          onBack={() => setView("lobby")}
+        />
+      );
+
+    case "bracket":
+      return (
+        <StandaloneBracketView
           poolId={poolId}
           player={player}
           onBack={() => setView("lobby")}
