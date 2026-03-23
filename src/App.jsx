@@ -846,6 +846,8 @@ function PoolLobby({ poolId, player, onPlay, onBracket, onLeaderboard, onAdmin, 
   const [playerPicks, setPlayerPicks] = useState(null);
   const [currentRound, setCurrentRound] = useState(0);
   const [showRules, setShowRules] = useState(false);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [copiedFlash, setCopiedFlash] = useState(false);
 
   useEffect(() => {
     api(`/pools/${poolId}`).then(setPool);
@@ -986,9 +988,13 @@ function PoolLobby({ poolId, player, onPlay, onBracket, onLeaderboard, onAdmin, 
         </div>
 
         {/* Secondary actions footer */}
-        <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap", marginTop: 8 }}>
+        <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap", marginTop: 8, position: "relative" }}>
           {shareUrl && (
-            <button onClick={() => navigator.clipboard?.writeText(shareUrl)} style={{
+            <button onClick={() => {
+              navigator.clipboard?.writeText(shareUrl);
+              setCopiedFlash(true);
+              setTimeout(() => setCopiedFlash(false), 2000);
+            }} style={{
               background: "none", border: "1px solid #1e293b", borderRadius: 6,
               color: "#64748b", padding: "6px 12px", fontSize: 11, cursor: "pointer",
             }}>
@@ -1004,7 +1010,7 @@ function PoolLobby({ poolId, player, onPlay, onBracket, onLeaderboard, onAdmin, 
             color: "#475569", padding: "6px 12px", fontSize: 11, cursor: "pointer",
           }}>Admin</button>
           {onLogout && (
-            <button onClick={onLogout} style={{
+            <button onClick={() => setShowLogoutConfirm(true)} style={{
               background: "none", border: "1px solid #1e293b", borderRadius: 6,
               color: "#475569", padding: "6px 12px", fontSize: 11, cursor: "pointer",
             }}>
@@ -1012,6 +1018,47 @@ function PoolLobby({ poolId, player, onPlay, onBracket, onLeaderboard, onAdmin, 
             </button>
           )}
         </div>
+
+        {/* Copied flash message */}
+        {copiedFlash && (
+          <div style={{
+            marginTop: 10, padding: "6px 16px", borderRadius: 8,
+            backgroundColor: "rgba(34,197,94,0.15)", border: "1px solid rgba(34,197,94,0.3)",
+            color: "#22c55e", fontSize: 12, fontWeight: 600, textAlign: "center",
+          }}>
+            Successfully copied!
+          </div>
+        )}
+
+        {/* Logout confirmation modal */}
+        {showLogoutConfirm && (
+          <div style={{
+            position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
+            backgroundColor: "rgba(0,0,0,0.7)", zIndex: 1000,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            padding: 20,
+          }} onClick={() => setShowLogoutConfirm(false)}>
+            <div style={{
+              ...s.card, backgroundColor: "#1e293b", maxWidth: 360, width: "100%",
+              textAlign: "center",
+            }} onClick={(e) => e.stopPropagation()}>
+              <div style={{ fontSize: 28, marginBottom: 12 }}>{"\u26A0\uFE0F"}</div>
+              <h3 style={{ color: "#fff", margin: "0 0 8px 0", fontSize: 16 }}>Are you sure?</h3>
+              <p style={{ color: "#94a3b8", fontSize: 13, lineHeight: 1.6, margin: "0 0 20px 0" }}>
+                Selecting yes means you will have to sign back in using the original invite link.
+              </p>
+              <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
+                <button onClick={() => setShowLogoutConfirm(false)} style={{
+                  ...s.btnSecondary, borderColor: "rgba(255,255,255,0.1)", color: "#94a3b8", fontSize: 14,
+                  padding: "10px 24px",
+                }}>Cancel</button>
+                <button onClick={onLogout} style={{
+                  ...s.btnPrimary, backgroundColor: "#ef4444", padding: "10px 24px",
+                }}>Yes, log out</button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Rules modal */}
         {showRules && (
@@ -1686,6 +1733,7 @@ function PlayView({ poolId, player, onBack, onLiveScores }) {
           usedTeams={usedTeams}
           currentRound={currentRound}
           onSwitchToMakePicks={() => setActiveTab("picks")}
+          defaultForecast={true}
         />
       ) : (
       <>
