@@ -2051,6 +2051,8 @@ function PlayerBracketView({ poolId, allResults, playerPicksByRound, currentPick
   const [activeSide, setActiveSide] = useState("left"); // "left" = East/South, "right" = West/Midwest
   const [forecastMode, setForecastMode] = useState(false);
   const [forecasts, setForecasts] = useState({}); // { "r1-East-0": "Duke", ... }
+  const [forecastChampion, setForecastChampion] = useState(null); // team name of forecasted champ
+  const [showChampConfetti, setShowChampConfetti] = useState(false);
 
   // Build all rounds of matchups
   const allRounds = [];
@@ -2088,8 +2090,17 @@ function PlayerBracketView({ poolId, allResults, playerPicksByRound, currentPick
       const next = { ...prev };
       if (next[key] === teamName) {
         delete next[key]; // toggle off
+        // Clear champion if we toggled off a championship pick
+        if (roundIdx === 4) setForecastChampion(null);
       } else {
         next[key] = teamName; // pick this team to advance
+
+        // If this is a Championship pick, trigger the celebration!
+        if (roundIdx === 4) {
+          setForecastChampion(teamName);
+          setShowChampConfetti(true);
+          setTimeout(() => setShowChampConfetti(false), 5000);
+        }
       }
       return next;
     });
@@ -2136,6 +2147,55 @@ function PlayerBracketView({ poolId, allResults, playerPicksByRound, currentPick
       return [{ teamA: winners[0], teamB: winners[1] }];
     }
     return allRounds[roundIdx]?.[region] || [];
+  }
+
+  // Build forecast-aware Final Four matchups
+  function getForecastFinalFour() {
+    // Get E8 winners from each region
+    const regionWinners = {};
+    for (const region of REGIONS) {
+      const e8 = getForecastMatchups(2, region);
+      if (e8.length > 0) {
+        const res = getForecastWinner(2, region, 0);
+        if (res) {
+          const team = [e8[0].teamA, e8[0].teamB].find(t => t.name === res.winner);
+          regionWinners[region] = team ? { ...team, forecasted: !res.isReal } : { name: res.winner, seed: 0, region, forecasted: !res.isReal };
+        } else {
+          regionWinners[region] = { name: `${region} Winner`, seed: 0, region, projected: true };
+        }
+      } else {
+        regionWinners[region] = { name: `${region} Winner`, seed: 0, region, projected: true };
+      }
+    }
+    // East/South vs West/Midwest
+    return [
+      { teamA: regionWinners["East"], teamB: regionWinners["South"] },
+      { teamA: regionWinners["West"], teamB: regionWinners["Midwest"] },
+    ];
+  }
+
+  // Build forecast-aware Championship matchup
+  function getForecastChampionship() {
+    const f4 = getForecastFinalFour();
+    const winners = f4.map((m, idx) => {
+      const res = getForecastWinner(3, "Final Four", idx);
+      if (res) {
+        const team = [m.teamA, m.teamB].find(t => t.name === res.winner);
+        return team ? { ...team, forecasted: !res.isReal } : { name: res.winner, seed: 0, region: "Final", forecasted: !res.isReal };
+      }
+      return { name: "TBD", seed: 0, region: "Final", projected: true };
+    });
+    return [{ teamA: winners[0], teamB: winners[1] || { name: "TBD", seed: 0, region: "Final", projected: true } }];
+  }
+
+  // Check if we have a forecasted champion
+  function checkForecastChampion() {
+    const champMatchups = getForecastChampionship();
+    if (champMatchups.length > 0) {
+      const res = getForecastWinner(4, "Championship", 0);
+      if (res && !res.isReal) return res.winner;
+    }
+    return null;
   }
 
   function hexToRgba(hex, alpha) {
@@ -2331,39 +2391,125 @@ function PlayerBracketView({ poolId, allResults, playerPicksByRound, currentPick
 
   // Final Four + Championship
   function FinalRounds() {
-    const f4 = allRounds[3] || {};
-    const champ = allRounds[4] || {};
-    const allF4 = Object.values(f4).flat();
-    const allChamp = Object.values(champ).flat();
+    // Use forecast-aware matchups when in forecast mode
+    const f4Matchups = forecastMode ? getForecastFinalFour() : (Object.values(allRounds[3] || {}).flat());
+    const champMatchups = forecastMode ? getForecastChampionship() : (Object.values(allRounds[4] || {}).flat());
+
+    // Check if any teams are populated (real or forecast)
+    const hasF4Teams = f4Matchups.some(m =>
+      (m.teamA?.name && m.teamA.name !== "TBD" && !m.teamA.name.includes("Winner")) ||
+      (m.teamB?.name && m.teamB.name !== "TBD" && !m.teamB.name.includes("Winner"))
+    );
+    const hasChampTeams = champMatchups.some(m =>
+      (m.teamA?.name && m.teamA.name !== "TBD") ||
+      (m.teamB?.name && m.teamB.name !== "TBD")
+    );
+
+    // Get the current forecasted champion (if any)
+    const champName = forecastChampion;
+    const champColor = champName ? getTeamColor(champName) : null;
+    const champHasColor = champColor && champColor !== "#64748b";
 
     return (
       <div style={{ marginTop: 16 }}>
         <div style={{
           padding: "8px 14px", borderRadius: "8px 8px 0 0",
-          background: "linear-gradient(135deg, rgba(59,130,246,0.12), rgba(249,115,22,0.12))",
-          borderBottom: "1px solid rgba(249,115,22,0.15)",
+          background: champName
+            ? `linear-gradient(135deg, rgba(234,179,8,0.25), rgba(249,115,22,0.2))`
+            : "linear-gradient(135deg, rgba(59,130,246,0.12), rgba(249,115,22,0.12))",
+          borderBottom: champName ? "2px solid rgba(234,179,8,0.5)" : "1px solid rgba(249,115,22,0.15)",
           textAlign: "center",
         }}>
-          <span style={{ color: "#e2e8f0", fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1 }}>Final Four & Championship</span>
+          <span style={{
+            color: champName ? "#fbbf24" : "#e2e8f0",
+            fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1,
+          }}>
+            Final Four & Championship
+          </span>
         </div>
         <div style={{
           backgroundColor: "rgba(255,255,255,0.02)", borderRadius: "0 0 8px 8px",
           padding: 10, border: "1px solid rgba(255,255,255,0.04)", borderTop: "none",
         }}>
-          {allF4.length > 0 ? (
-            <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: allChamp.length > 0 ? 12 : 0 }}>
-              <div style={{ color: "#475569", fontSize: 9, textTransform: "uppercase", letterSpacing: 1, textAlign: "center", fontWeight: 700 }}>Final Four</div>
-              {allF4.map((m, i) => <BracketMatchup key={i} matchup={m} roundIdx={3} region="Final Four" matchupIdx={i} />)}
+          {/* Final Four */}
+          {hasF4Teams ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 }}>
+              <div style={{ color: "#475569", fontSize: 9, textTransform: "uppercase", letterSpacing: 1, textAlign: "center", fontWeight: 700 }}>
+                Final Four
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ color: SIDE_COLORS.left.primary, fontSize: 8, textAlign: "center", marginBottom: 3, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>East / South</div>
+                  <BracketMatchup matchup={f4Matchups[0]} roundIdx={3} region="Final Four" matchupIdx={0} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ color: SIDE_COLORS.right.primary, fontSize: 8, textAlign: "center", marginBottom: 3, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>West / Midwest</div>
+                  {f4Matchups[1] && <BracketMatchup matchup={f4Matchups[1]} roundIdx={3} region="Final Four" matchupIdx={1} />}
+                </div>
+              </div>
             </div>
           ) : (
             <div style={{ color: "#334155", fontSize: 11, textAlign: "center", fontStyle: "italic", padding: 8 }}>
-              Matchups set after Elite 8
+              {forecastMode ? "Forecast Elite 8 winners to populate Final Four" : "Matchups set after Elite 8"}
             </div>
           )}
-          {allChamp.length > 0 && (
+
+          {/* Championship */}
+          {hasChampTeams ? (
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              <div style={{ color: "#475569", fontSize: 9, textTransform: "uppercase", letterSpacing: 1, textAlign: "center", fontWeight: 700 }}>Championship</div>
-              {allChamp.map((m, i) => <BracketMatchup key={i} matchup={m} roundIdx={4} region="Championship" matchupIdx={i} />)}
+              <div style={{ color: "#475569", fontSize: 9, textTransform: "uppercase", letterSpacing: 1, textAlign: "center", fontWeight: 700 }}>
+                Championship
+              </div>
+              {champMatchups.map((m, i) => <BracketMatchup key={i} matchup={m} roundIdx={4} region="Championship" matchupIdx={i} />)}
+            </div>
+          ) : hasF4Teams && forecastMode ? (
+            <div style={{ color: "#334155", fontSize: 11, textAlign: "center", fontStyle: "italic", padding: 8 }}>
+              Forecast Final Four winners to set the Championship
+            </div>
+          ) : null}
+
+          {/* Champion celebration */}
+          {champName && (
+            <div style={{
+              marginTop: 12, padding: "16px 20px", borderRadius: 12, textAlign: "center",
+              background: champHasColor
+                ? `linear-gradient(135deg, ${hexToRgba(champColor, 0.2)}, rgba(234,179,8,0.2))`
+                : "linear-gradient(135deg, rgba(234,179,8,0.2), rgba(249,115,22,0.2))",
+              border: "2px solid rgba(234,179,8,0.5)",
+              boxShadow: "0 0 30px rgba(234,179,8,0.15), 0 0 60px rgba(234,179,8,0.05)",
+              animation: "championGlow 2s ease-in-out infinite",
+            }}>
+              <div style={{ fontSize: 40, marginBottom: 6 }}>{"\u{1F3C6}"}</div>
+              <div style={{ color: "#fbbf24", fontSize: 11, textTransform: "uppercase", letterSpacing: 2, fontWeight: 700, marginBottom: 4 }}>
+                Your Forecasted Champion
+              </div>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+                <JerseyBadge seed={0} teamName={champName} />
+                <span style={{
+                  color: "#fff", fontSize: 24, fontWeight: 800,
+                  textShadow: "0 0 20px rgba(234,179,8,0.5)",
+                }}>
+                  {champName}
+                </span>
+              </div>
+              {usedTeams.includes(champName) && (
+                <div style={{
+                  marginTop: 8, padding: "4px 12px", borderRadius: 12, display: "inline-block",
+                  backgroundColor: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.3)",
+                  color: "#fca5a5", fontSize: 11, fontWeight: 600,
+                }}>
+                  Already used -- can't pick in Championship
+                </div>
+              )}
+              {!usedTeams.includes(champName) && (
+                <div style={{
+                  marginTop: 8, padding: "4px 12px", borderRadius: 12, display: "inline-block",
+                  backgroundColor: "rgba(34,197,94,0.15)", border: "1px solid rgba(34,197,94,0.3)",
+                  color: "#86efac", fontSize: 11, fontWeight: 600,
+                }}>
+                  Available to pick
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -2388,6 +2534,17 @@ function PlayerBracketView({ poolId, allResults, playerPicksByRound, currentPick
 
   return (
     <div style={{ maxWidth: 540, margin: "0 auto" }}>
+      {/* Champion confetti */}
+      {showChampConfetti && <Confetti />}
+
+      {/* Champion glow animation */}
+      <style>{`
+        @keyframes championGlow {
+          0%, 100% { box-shadow: 0 0 20px rgba(234,179,8,0.15), 0 0 40px rgba(234,179,8,0.05); }
+          50% { box-shadow: 0 0 30px rgba(234,179,8,0.3), 0 0 60px rgba(234,179,8,0.1), 0 0 80px rgba(234,179,8,0.05); }
+        }
+      `}</style>
+
       {/* Stats bar */}
       <div style={{
         display: "flex", justifyContent: "center", gap: 16, marginBottom: 14,
@@ -2412,7 +2569,7 @@ function PlayerBracketView({ poolId, allResults, playerPicksByRound, currentPick
 
       {/* Forecast toggle */}
       <div style={{ display: "flex", justifyContent: "center", marginBottom: 12 }}>
-        <button onClick={() => { setForecastMode(!forecastMode); if (forecastMode) setForecasts({}); }} style={{
+        <button onClick={() => { setForecastMode(!forecastMode); if (forecastMode) { setForecasts({}); setForecastChampion(null); } }} style={{
           padding: "6px 16px", borderRadius: 20, border: "none", cursor: "pointer",
           fontSize: 12, fontWeight: 700, transition: "all 0.15s ease",
           backgroundColor: forecastMode ? "rgba(168,85,247,0.2)" : "rgba(255,255,255,0.05)",
@@ -2496,7 +2653,7 @@ function PlayerBracketView({ poolId, allResults, playerPicksByRound, currentPick
           Make Picks
         </button>
         {forecastMode && Object.keys(forecasts).length > 0 && (
-          <button onClick={() => setForecasts({})} style={{
+          <button onClick={() => { setForecasts({}); setForecastChampion(null); }} style={{
             background: "none", border: "1px solid rgba(168,85,247,0.25)", borderRadius: 20,
             color: "#a855f7", fontSize: 12, fontWeight: 600, padding: "8px 20px",
             cursor: "pointer",
