@@ -334,6 +334,69 @@ for (const [region, matchups] of Object.entries(R32_MATCHUPS)) {
   }
 }
 
+// Build expected matchups for a round based on previous round results
+// Returns { "region-idx": Set(["TeamA", "TeamB"]) }
+function buildExpectedMatchups(round, poolId) {
+  const expected = {};
+  const REGIONS = ["East", "South", "West", "Midwest"];
+
+  if (round === 1) {
+    // Sweet 16: winners of adjacent R32 matchups play each other
+    // R32 matchups 0+1 -> S16 matchup 0, R32 matchups 2+3 -> S16 matchup 1
+    const r32Results = db.prepare(
+      'SELECT region, matchup_idx, winner FROM results WHERE pool_id = ? AND round = 0'
+    ).all(poolId);
+    const r32Map = {};
+    for (const r of r32Results) r32Map[`${r.region}-${r.matchup_idx}`] = r.winner;
+
+    for (const region of REGIONS) {
+      const w0 = r32Map[`${region}-0`];
+      const w1 = r32Map[`${region}-1`];
+      const w2 = r32Map[`${region}-2`];
+      const w3 = r32Map[`${region}-3`];
+      if (w0 || w1) expected[`${region}-0`] = new Set([w0, w1].filter(Boolean));
+      if (w2 || w3) expected[`${region}-1`] = new Set([w2, w3].filter(Boolean));
+    }
+  } else if (round === 2) {
+    // Elite 8: winners of S16 matchups 0+1 in each region
+    const s16Results = db.prepare(
+      'SELECT region, matchup_idx, winner FROM results WHERE pool_id = ? AND round = 1'
+    ).all(poolId);
+    const s16Map = {};
+    for (const r of s16Results) s16Map[`${r.region}-${r.matchup_idx}`] = r.winner;
+
+    for (const region of REGIONS) {
+      const w0 = s16Map[`${region}-0`];
+      const w1 = s16Map[`${region}-1`];
+      if (w0 || w1) expected[`${region}-0`] = new Set([w0, w1].filter(Boolean));
+    }
+  } else if (round === 3) {
+    // Final Four: East vs South (matchup 0), West vs Midwest (matchup 1)
+    const e8Results = db.prepare(
+      'SELECT region, matchup_idx, winner FROM results WHERE pool_id = ? AND round = 2'
+    ).all(poolId);
+    const e8Map = {};
+    for (const r of e8Results) e8Map[`${r.region}-${r.matchup_idx}`] = r.winner;
+
+    const eastW = e8Map["East-0"], southW = e8Map["South-0"];
+    const westW = e8Map["West-0"], midwestW = e8Map["Midwest-0"];
+    if (eastW || southW) expected["Final Four-0"] = new Set([eastW, southW].filter(Boolean));
+    if (westW || midwestW) expected["Final Four-1"] = new Set([westW, midwestW].filter(Boolean));
+  } else if (round === 4) {
+    // Championship: F4 matchup 0 winner vs F4 matchup 1 winner
+    const f4Results = db.prepare(
+      'SELECT region, matchup_idx, winner FROM results WHERE pool_id = ? AND round = 3'
+    ).all(poolId);
+    const f4Map = {};
+    for (const r of f4Results) f4Map[`${r.region}-${r.matchup_idx}`] = r.winner;
+
+    const w0 = f4Map["Final Four-0"], w1 = f4Map["Final Four-1"];
+    if (w0 || w1) expected["Championship-0"] = new Set([w0, w1].filter(Boolean));
+  }
+
+  return expected;
+}
+
 // Match an ESPN game to a specific matchup in our bracket
 // Returns { region, matchup_idx } or null
 function matchGameToMatchup(game, round, poolId) {
@@ -350,11 +413,20 @@ function matchGameToMatchup(game, round, poolId) {
     return null;
   }
 
-  // For later rounds, match via picks + existing results
-  const existingResults = db.prepare(
-    'SELECT region, matchup_idx, winner FROM results WHERE pool_id = ? AND round = ?'
-  ).all(poolId, round);
+  // For later rounds, try multiple strategies:
 
+  // Strategy 1: Build expected matchups from previous round results
+  const expectedMatchups = buildExpectedMatchups(round, poolId);
+  for (const [key, teams] of Object.entries(expectedMatchups)) {
+    for (const gt of gameTeams) {
+      if (teams.has(gt)) {
+        const [region, idx] = key.split('-');
+        return { region, matchup_idx: parseInt(idx) };
+      }
+    }
+  }
+
+  // Strategy 2: Match via picks for this round
   const allPicks = db.prepare(
     'SELECT DISTINCT region, matchup_idx, team FROM picks WHERE round = ?'
   ).all(round);
@@ -374,6 +446,11 @@ function matchGameToMatchup(game, round, poolId) {
       }
     }
   }
+
+  // Strategy 3: Check existing results for this round
+  const existingResults = db.prepare(
+    'SELECT region, matchup_idx, winner FROM results WHERE pool_id = ? AND round = ?'
+  ).all(poolId, round);
 
   for (const r of existingResults) {
     if (gameTeams.includes(r.winner)) {
@@ -1073,14 +1150,6 @@ app.get('/api/admin/sync-log', (req, res) => {
   res.json(logs);
 });
 
-// Debug: show all results, picks, and pools
-app.get('/api/admin/debug', (req, res) => {
-  const pools = db.prepare('SELECT id, name FROM pools').all();
-  const results = db.prepare('SELECT * FROM results ORDER BY round, region, matchup_idx').all();
-  const picks = db.prepare('SELECT * FROM picks ORDER BY round, region, matchup_idx').all();
-  const players = db.prepare('SELECT id, name, pool_id, alive, eliminated_round FROM players').all();
-  res.json({ pools, results, picks, players });
-});
 
 // ============================================================
 // CRON: ESPN SCORE SYNC
