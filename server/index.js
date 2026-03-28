@@ -1073,6 +1073,15 @@ app.get('/api/admin/sync-log', (req, res) => {
   res.json(logs);
 });
 
+// Debug: show all results, picks, and pools
+app.get('/api/admin/debug', (req, res) => {
+  const pools = db.prepare('SELECT id, name FROM pools').all();
+  const results = db.prepare('SELECT * FROM results ORDER BY round, region, matchup_idx').all();
+  const picks = db.prepare('SELECT * FROM picks ORDER BY round, region, matchup_idx').all();
+  const players = db.prepare('SELECT id, name, pool_id, alive, eliminated_round FROM players').all();
+  res.json({ pools, results, picks, players });
+});
+
 // ============================================================
 // CRON: ESPN SCORE SYNC
 // Runs every 30 minutes. During game windows, fetches ESPN
