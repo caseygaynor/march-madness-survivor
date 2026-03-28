@@ -103,8 +103,8 @@ const ROUND_SCHEDULE = [
   {
     round: 2,
     name: "Elite 8",
-    lockTime: "2026-03-29T14:00:00-04:00",  // Sat March 29, 2 PM ET
-    endDate: "2026-03-30",                    // Sun March 30
+    lockTime: "2026-03-28T18:09:00-04:00",  // Sat March 28, 6:09 PM ET
+    endDate: "2026-03-29",                    // Games March 28-29
     gradeable: true,
   },
   {

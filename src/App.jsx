@@ -30,7 +30,7 @@ function getSideColor(region) {
 const ROUND_CONFIG = [
   { name: "Round of 32", picksPerRegion: 1, totalPicks: 4, description: "Pick 1 team per region (4 total). All must win.", lockTime: "2026-03-21T12:10:00-04:00" },
   { name: "Sweet 16", picksPerRegion: null, totalPicks: 2, description: "Pick 1 team from East or South. Pick 1 team from West or Midwest. Both must win.", bracketSideRule: true, lockTime: "2026-03-26T19:10:00-04:00" },
-  { name: "Elite 8", picksPerRegion: null, totalPicks: 1, description: "Pick 1 team to advance. Must win.", lockTime: "2026-03-29T14:00:00-04:00" },
+  { name: "Elite 8", picksPerRegion: null, totalPicks: 1, description: "Pick 1 team to advance. Must win.", lockTime: "2026-03-28T18:09:00-04:00" },
   { name: "Final Four", picksPerRegion: null, totalPicks: 1, description: "Pick 1 team to advance. Must win.", lockTime: "2026-04-04T18:00:00-04:00" },
   { name: "Championship", picksPerRegion: null, totalPicks: 1, description: "Pick 1 team. Hope you haven't used them!", lockTime: "2026-04-06T21:00:00-04:00" },
 ];
