@@ -31,7 +31,7 @@ const ROUND_CONFIG = [
   { name: "Round of 32", picksPerRegion: 1, totalPicks: 4, description: "Pick 1 team per region (4 total). All must win.", lockTime: "2026-03-21T12:10:00-04:00" },
   { name: "Sweet 16", picksPerRegion: null, totalPicks: 2, description: "Pick 1 team from East or South. Pick 1 team from West or Midwest. Both must win.", bracketSideRule: true, lockTime: "2026-03-26T19:10:00-04:00" },
   { name: "Elite 8", picksPerRegion: null, totalPicks: 1, description: "Pick 1 team to advance. Must win.", lockTime: "2026-03-28T18:09:00-04:00" },
-  { name: "Final Four", picksPerRegion: null, totalPicks: 1, description: "Pick 1 team to advance. Must win.", lockTime: "2026-04-04T18:00:00-04:00" },
+  { name: "Final Four", picksPerRegion: null, totalPicks: 1, description: "Pick 1 team to advance. Must win.", lockTime: "2026-04-04T18:09:00-04:00" },
   { name: "Championship", picksPerRegion: null, totalPicks: 1, description: "Pick 1 team. Hope you haven't used them!", lockTime: "2026-04-06T21:00:00-04:00" },
 ];
 
@@ -3018,13 +3018,7 @@ function LeaderboardView({ poolId, player: currentPlayer, onBack }) {
 
   if (!lb) return <div style={{ ...s.page, ...s.center }}><div style={{ color: "#64748b" }}>Loading...</div></div>;
 
-  const { players: data, poolStatus, winners, aliveCount, totalPlayers } = lb;
-
-  // Build results map for W/L
-  const gradedRounds = new Set();
-  const resultMap = {};
-  // We need results for pick details -- fetch from the picks data
-  // The server now includes all the info we need in leaderboard response
+  const { players: data, poolStatus, winners, aliveCount, totalPlayers, maxGradedRound } = lb;
 
   return (
     <div style={s.page}>
@@ -3123,14 +3117,16 @@ function LeaderboardView({ poolId, player: currentPlayer, onBack }) {
             const isCurrentPlayer = currentPlayer && p.name === currentPlayer.name;
             const isExpanded = expandedPlayer === p.id;
 
-            // Survival timeline: which rounds did this player survive?
+            // Survival timeline: based on actual pick results per round
             const survivalRounds = ROUND_CONFIG.map((rc, ri) => {
-              const hasPicks = p.picks.some(pk => pk.round === ri);
-              const elim = p.eliminated_round ?? -1;
-              if (ri < elim || (p.alive && hasPicks)) return "survived";
-              if (ri === elim) return "eliminated";
-              if (!hasPicks) return "future";
-              return "future";
+              if (ri > (maxGradedRound ?? -1)) return "future"; // round not graded yet
+              const roundPicks = p.picks.filter(pk => pk.round === ri);
+              if (roundPicks.length === 0) return "missed"; // no picks for a graded round = red
+              const anyIncorrect = roundPicks.some(pk => pk.pick_result === "incorrect");
+              if (anyIncorrect) return "incorrect";
+              const allCorrect = roundPicks.every(pk => pk.pick_result === "correct");
+              if (allCorrect) return "correct";
+              return "pending"; // picks exist but not yet graded
             });
 
             return (
@@ -3175,26 +3171,30 @@ function LeaderboardView({ poolId, player: currentPlayer, onBack }) {
                     </div>
                     {/* Survival timeline dots */}
                     <div style={{ display: "flex", gap: 3, marginTop: 4 }}>
-                      {survivalRounds.map((status, ri) => (
-                        <div key={ri} style={{ display: "flex", alignItems: "center", gap: 2 }}>
-                          <div style={{
-                            width: status === "eliminated" ? 10 : 8,
-                            height: status === "eliminated" ? 10 : 8,
-                            borderRadius: "50%",
-                            backgroundColor: status === "survived" ? "#22c55e"
-                              : status === "eliminated" ? "#ef4444"
-                              : "rgba(255,255,255,0.1)",
-                            border: status === "eliminated" ? "2px solid #ef4444" : "none",
-                            transition: "all 0.3s ease",
-                          }} title={ROUND_CONFIG[ri].name} />
-                          {ri < ROUND_CONFIG.length - 1 && (
+                      {survivalRounds.map((status, ri) => {
+                        const isRed = status === "incorrect" || status === "missed";
+                        const isGreen = status === "correct";
+                        return (
+                          <div key={ri} style={{ display: "flex", alignItems: "center", gap: 2 }}>
                             <div style={{
-                              width: 8, height: 2,
-                              backgroundColor: status === "survived" ? "rgba(34,197,94,0.3)" : "rgba(255,255,255,0.05)",
-                            }} />
-                          )}
-                        </div>
-                      ))}
+                              width: isRed ? 10 : 8,
+                              height: isRed ? 10 : 8,
+                              borderRadius: "50%",
+                              backgroundColor: isGreen ? "#22c55e"
+                                : isRed ? "#ef4444"
+                                : "rgba(255,255,255,0.1)",
+                              border: isRed ? "2px solid #ef4444" : "none",
+                              transition: "all 0.3s ease",
+                            }} title={`${ROUND_CONFIG[ri].name}: ${status}`} />
+                            {ri < ROUND_CONFIG.length - 1 && (
+                              <div style={{
+                                width: 8, height: 2,
+                                backgroundColor: isGreen ? "rgba(34,197,94,0.3)" : "rgba(255,255,255,0.05)",
+                              }} />
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
 

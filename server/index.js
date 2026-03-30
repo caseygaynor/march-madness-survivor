@@ -110,14 +110,14 @@ const ROUND_SCHEDULE = [
   {
     round: 3,
     name: "Final Four",
-    lockTime: "2026-04-04T18:00:00-04:00",  // Sat April 4, 6 PM ET
+    lockTime: "2026-04-04T18:09:00-04:00",  // Sat April 4, 6:09 PM ET
     endDate: "2026-04-04",
     gradeable: true,
   },
   {
     round: 4,
     name: "Championship",
-    lockTime: "2026-04-06T21:00:00-04:00",  // Mon April 6, 9 PM ET
+    lockTime: "2026-04-06T21:00:00-04:00",  // Mon April 6, time TBD (placeholder 9 PM ET)
     endDate: "2026-04-06",
     gradeable: true,
   },
@@ -1009,7 +1009,7 @@ app.get('/api/pools/:id/leaderboard', (req, res) => {
     winners = enriched.filter(p => p.alive).map(p => p.name);
   }
 
-  res.json({ players: enriched, poolStatus, winners, aliveCount, totalPlayers });
+  res.json({ players: enriched, poolStatus, winners, aliveCount, totalPlayers, maxGradedRound });
 });
 
 // Admin: Auto-fetch results from ESPN for a round
